@@ -33,6 +33,11 @@ def upsert_organisation(data: OrganisationIn, db: Session = Depends(get_db)):
     return org
 
 
+@router.post("", response_model=OrganisationOut)
+def upsert_organisation_post(data: OrganisationIn, db: Session = Depends(get_db)):
+    return upsert_organisation(data, db)
+
+
 @router.post("/logo")
 def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     file_path = f"{UPLOAD_DIR}/{file.filename}"

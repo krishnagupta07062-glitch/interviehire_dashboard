@@ -99,6 +99,9 @@ class JobOut(BaseModel):
     is_job_listed: bool
     created_at: datetime
     created_by_name: Optional[str]
+    resume_analysis_enabled: bool = True
+    recruiter_screening_enabled: bool = True
+    functional_interview_enabled: bool = True
     pipeline: JobPipelineCounts
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
@@ -140,6 +143,10 @@ class JobSettingsIn(BaseModel):
     recruiter_screening_enabled: Optional[bool] = None
     functional_interview_enabled: Optional[bool] = None
     is_job_listed: Optional[bool] = None
+    title: Optional[str] = None
+    role_name: Optional[str] = None
+    experience_band: Optional[str] = None
+    description: Optional[str] = None
  
 class JobCreateIn(BaseModel):
     title: str

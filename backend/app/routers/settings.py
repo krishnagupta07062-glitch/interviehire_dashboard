@@ -30,4 +30,9 @@ def change_password(data: ChangePasswordIn, db: Session = Depends(get_db)):
     user.hashed_password = hash_password(data.new_password)
     db.commit()
     return {"message": "Password updated successfully"}
+
+
+@router.post("/password")
+def change_password_post(data: ChangePasswordIn, db: Session = Depends(get_db)):
+    return change_password(data, db)
  
