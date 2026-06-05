@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, DateTime, Enum
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -14,6 +15,7 @@ class UserStatus(str, enum.Enum):
 
 
 class UserType(str, enum.Enum):
+    super_admin = "super_admin"
     org_admin = "org_admin"
     member = "member"
 
@@ -28,5 +30,8 @@ class User(Base):
     user_type = Column(Enum(UserType), default=UserType.member)
     status = Column(Enum(UserStatus), default=UserStatus.invited)
     hashed_password = Column(String, nullable=True)  # null until they accept invite
+    organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id"), nullable=True)
     registered_on = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    organisation = relationship("Organisation")

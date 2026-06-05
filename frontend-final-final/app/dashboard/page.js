@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { initDashboardPage } from '../../src/dashboard';
-import { html } from '../../src/html/dashboard';
+import { html } from '../../src/html/dashboard-crystal';
 
 export default function DashboardPage() {
   useEffect(() => {

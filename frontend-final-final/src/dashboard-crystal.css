@@ -293,7 +293,7 @@ body { position: relative; color: var(--color-text-primary); }
    SIDEBAR
    ============================================================ */
 .sidebar {
-  background: rgba(0, 0, 0, 0.98);
+  background: rgba(10, 10, 10, 0.6);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   border-right: 1px solid var(--glass-border);

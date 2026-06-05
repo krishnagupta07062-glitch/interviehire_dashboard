@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.websocket_routes import router as websocket_router
 from app.database import Base, engine
-from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek
+from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek, auth
  
 # Import all models so SQLAlchemy registers them before create_all
 import app.models  # noqa
@@ -20,6 +20,16 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS recruiter_screening VARCHAR;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS recruiter_screening_score FLOAT;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMP;"))
+    conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS organisation_id UUID;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS organisation_id UUID;"))
+    conn.commit()
+
+    # Add 'super_admin' to usertype enum in postgresql
+    try:
+        conn.execute(text("COMMIT;"))  # ALTER TYPE cannot run inside a transaction block in PostgreSQL
+        conn.execute(text("ALTER TYPE usertype ADD VALUE 'super_admin';"))
+    except Exception as enum_err:
+        pass
     conn.commit()
 
     # Rename / Migrate career_pages -> organisations
@@ -68,6 +78,7 @@ app.add_middleware(
  
 # Routers
 app.include_router(websocket_router)  # existing WS routes
+app.include_router(auth.router,             prefix="/api/auth",     tags=["Auth"])
 app.include_router(jobs.router,             prefix="/api/jobs",     tags=["Jobs"])
 app.include_router(team.router,             prefix="/api/team",     tags=["Team"])
 app.include_router(organisation.router,     prefix="/api/organisation", tags=["Organisation"])

@@ -15,6 +15,34 @@ from app.schemas import (
     JobCreateIn, ApplicantUpdateIn, BulkApplicantsIn, OutgoingMessage, JobParametersIn
 )
 from app.websocket_manager import manager
+from app.utils.auth import get_current_user, get_active_org_id
+
+def _verify_job_access(job_id: UUID, current_user: User, active_org_id: Optional[UUID], db: Session) -> Job:
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    if current_user.user_type == UserType.super_admin:
+        if job.organisation_id != active_org_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.user_type == UserType.org_admin:
+        if job.organisation_id != current_user.organisation_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    else: # Member
+        if job.organisation_id != current_user.organisation_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        collab = db.query(JobCollaborator).filter(JobCollaborator.job_id == job_id, JobCollaborator.user_id == current_user.id).first()
+        if not collab:
+            raise HTTPException(status_code=403, detail="Access denied")
+    return job
+
+def _verify_applicant_access(applicant_id: UUID, current_user: User, active_org_id: Optional[UUID], db: Session) -> Applicant:
+    applicant = db.query(Applicant).filter(Applicant.id == applicant_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant not found")
+    _verify_job_access(applicant.job_id, current_user, active_org_id, db)
+    return applicant
+
 
 router = APIRouter()
 
@@ -54,35 +82,54 @@ def _build_job_out(job: Job, db: Session) -> dict:
 @router.get("", response_model=JobListOut)
 def list_jobs(
     status: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
     db: Session = Depends(get_db)
 ):
     query = db.query(Job)
+    if current_user.user_type == UserType.super_admin:
+        query = query.filter(Job.organisation_id == active_org_id)
+    elif current_user.user_type == UserType.org_admin:
+        query = query.filter(Job.organisation_id == current_user.organisation_id)
+    else: # Member
+        query = query.filter(Job.organisation_id == current_user.organisation_id)
+        query = query.join(Job.collaborators).filter(JobCollaborator.user_id == current_user.id)
+
+    all_visible_jobs = query.all()
+    
     if status and status != "all":
         query = query.filter(Job.status == status)
     jobs = query.order_by(Job.created_at.desc()).all()
 
-    all_jobs = db.query(Job).all()
     return JobListOut(
         jobs=[_build_job_out(j, db) for j in jobs],
-        total=len(all_jobs),
-        published=sum(1 for j in all_jobs if j.status == JobStatus.published),
-        draft=sum(1 for j in all_jobs if j.status == JobStatus.draft),
-        archived=sum(1 for j in all_jobs if j.status == JobStatus.archived),
+        total=len(all_visible_jobs),
+        published=sum(1 for j in all_visible_jobs if j.status == JobStatus.published),
+        draft=sum(1 for j in all_visible_jobs if j.status == JobStatus.draft),
+        archived=sum(1 for j in all_visible_jobs if j.status == JobStatus.archived),
     )
 
 
 @router.post("", response_model=JobOut)
-def create_job(data: JobCreateIn, db: Session = Depends(get_db)):
-    # Default admin user as creator if one exists
-    admin = db.query(User).filter(User.user_type == UserType.org_admin).first()
+def create_job(
+    data: JobCreateIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
     import json
+    org_id = active_org_id if current_user.user_type == UserType.super_admin else current_user.organisation_id
+    if not org_id:
+        raise HTTPException(status_code=400, detail="User does not belong to any organisation.")
+
     new_job = Job(
         title=data.title,
         role_name=data.role_name,
         experience_band=data.experience_band,
         custom_job_id=data.custom_job_id,
         status=data.status,
-        created_by_id=admin.id if admin else None,
+        created_by_id=current_user.id,
+        organisation_id=org_id,
         resume_analysis_enabled=data.resume_analysis_enabled,
         recruiter_screening_enabled=data.recruiter_screening_enabled,
         functional_interview_enabled=data.functional_interview_enabled,
@@ -94,13 +141,23 @@ def create_job(data: JobCreateIn, db: Session = Depends(get_db)):
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
+
+    # Automatically make the creator a collaborator
+    collab = JobCollaborator(job_id=new_job.id, user_id=current_user.id)
+    db.add(collab)
+    db.commit()
+    db.refresh(new_job)
+
     return _build_job_out(new_job, db)
 
 
 # ─── CREATE JOB (file upload path) ───────────────────────────────────────────
 
 @router.post("/upload-jd")
-def upload_jd(file: UploadFile = File(...)):
+def upload_jd(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
     """Step 1 of Create Job — upload a PDF or DOCX job description."""
     if not file.filename.endswith((".pdf", ".docx")):
         raise HTTPException(status_code=400, detail="Only .pdf and .docx files are supported")
@@ -1062,18 +1119,25 @@ def _build_job_detail_out(job: Job) -> dict:
     }
 
 @router.get("/{job_id}", response_model=JobDetailOut)
-def get_job(job_id: UUID, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def get_job(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     return _build_job_detail_out(job)
 
 
 @router.patch("/{job_id}/settings", response_model=JobDetailOut)
-def update_job_settings(job_id: UUID, data: JobSettingsIn, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def update_job_settings(
+    job_id: UUID,
+    data: JobSettingsIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     for key, value in data.model_dump(exclude_unset=True).items():
         if key == "tags" and value is not None:
             import json
@@ -1085,10 +1149,13 @@ def update_job_settings(job_id: UUID, data: JobSettingsIn, db: Session = Depends
     return _build_job_detail_out(job)
 
 @router.delete("/{job_id}")
-def delete_job(job_id: UUID, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def delete_job(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     
     db.query(Applicant).filter(Applicant.job_id == job_id).delete(synchronize_session=False)
     db.query(JobCollaborator).filter(JobCollaborator.job_id == job_id).delete(synchronize_session=False)
@@ -1099,10 +1166,14 @@ def delete_job(job_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.patch("/{job_id}/parameters", response_model=JobDetailOut)
-def update_job_parameters(job_id: UUID, data: JobParametersIn, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def update_job_parameters(
+    job_id: UUID,
+    data: JobParametersIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     import json
     if data.resume_parameters is not None:
         job.resume_parameters = json.dumps(data.resume_parameters)
@@ -1115,17 +1186,18 @@ def update_job_parameters(job_id: UUID, data: JobParametersIn, db: Session = Dep
     return _build_job_detail_out(job)
 
 
+
 # ─── RESPONSES (candidates for a job) ────────────────────────────────────────
 
 @router.get("/{job_id}/responses")
 def get_responses(
     job_id: UUID,
     tab: Optional[str] = Query("overview"),  # overview | resume | screening | functional
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
     db: Session = Depends(get_db)
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
 
     applicants = db.query(Applicant).filter(Applicant.job_id == job_id).all()
 
@@ -1177,10 +1249,23 @@ def _build_funnel(applicants: list) -> dict:
 # ─── COLLABORATORS ────────────────────────────────────────────────────────────
 
 @router.post("/{job_id}/collaborators")
-def add_collaborator(job_id: UUID, data: CollaboratorIn, db: Session = Depends(get_db)):
+def add_collaborator(
+    job_id: UUID,
+    data: CollaboratorIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     user = db.query(User).filter(User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+        
+    # Check if collaborator already exists
+    existing = db.query(JobCollaborator).filter_by(job_id=job_id, user_id=data.user_id).first()
+    if existing:
+        return {"message": "Collaborator already added"}
+
     collab = JobCollaborator(job_id=job_id, user_id=data.user_id)
     db.add(collab)
     db.commit()
@@ -1188,7 +1273,14 @@ def add_collaborator(job_id: UUID, data: CollaboratorIn, db: Session = Depends(g
 
 
 @router.delete("/{job_id}/collaborators/{user_id}")
-def remove_collaborator(job_id: UUID, user_id: UUID, db: Session = Depends(get_db)):
+def remove_collaborator(
+    job_id: UUID,
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     collab = db.query(JobCollaborator).filter(
         JobCollaborator.job_id == job_id,
         JobCollaborator.user_id == user_id
@@ -1200,13 +1292,18 @@ def remove_collaborator(job_id: UUID, user_id: UUID, db: Session = Depends(get_d
     return {"message": "Collaborator removed"}
 
 
+
 # ─── ADD APPLICANTS ───────────────────────────────────────────────────────────
 
 @router.post("/{job_id}/applicants", response_model=ApplicantOut)
-def add_applicant(job_id: UUID, data: AddApplicantIn, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def add_applicant(
+    job_id: UUID,
+    data: AddApplicantIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     applicant = Applicant(**data.model_dump(), job_id=job_id)
     db.add(applicant)
     db.commit()
@@ -1229,10 +1326,14 @@ def add_applicant(job_id: UUID, data: AddApplicantIn, db: Session = Depends(get_
 
 
 @router.post("/{job_id}/applicants/bulk", response_model=List[ApplicantOut])
-def add_applicants_bulk(job_id: UUID, data: BulkApplicantsIn, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def add_applicants_bulk(
+    job_id: UUID,
+    data: BulkApplicantsIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
     
     created_applicants = []
     for app_in in data.applicants:
@@ -1261,10 +1362,14 @@ def add_applicants_bulk(job_id: UUID, data: BulkApplicantsIn, db: Session = Depe
 
 
 @router.post("/{job_id}/applicants/upload-resumes", response_model=List[ApplicantOut])
-def upload_resumes(job_id: UUID, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+def upload_resumes(
+    job_id: UUID,
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
         
     resume_dir = "uploads/resumes"
     os.makedirs(resume_dir, exist_ok=True)
@@ -1332,10 +1437,14 @@ def upload_resumes(job_id: UUID, files: List[UploadFile] = File(...), db: Sessio
 
 
 @router.patch("/applicants/{applicant_id}", response_model=ApplicantOut)
-def update_applicant(applicant_id: UUID, data: ApplicantUpdateIn, db: Session = Depends(get_db)):
-    applicant = db.query(Applicant).filter(Applicant.id == applicant_id).first()
-    if not applicant:
-        raise HTTPException(status_code=404, detail="Applicant not found")
+def update_applicant(
+    applicant_id: UUID,
+    data: ApplicantUpdateIn,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(applicant, key, value)
     db.commit()
@@ -1360,10 +1469,13 @@ def update_applicant(applicant_id: UUID, data: ApplicantUpdateIn, db: Session = 
 
 
 @router.get("/applicants/{applicant_id}/resume-text")
-def get_applicant_resume_text(applicant_id: UUID, db: Session = Depends(get_db)):
-    applicant = db.query(Applicant).filter(Applicant.id == applicant_id).first()
-    if not applicant:
-        raise HTTPException(status_code=404, detail="Applicant not found")
+def get_applicant_resume_text(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
     if not applicant.resume_url or not os.path.exists(applicant.resume_url):
         return {"text": ""}
     

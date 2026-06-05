@@ -157,6 +157,7 @@ const soundEngine = new SoundEngine();
 // STATE STORE
 // ==========================================
 const AppState = {
+  user: null,
   activeTab: 'jobs',
   activeSubtab: '',
   activeJobId: null,
@@ -1624,7 +1625,7 @@ function renderTeamTable() {
           <div class="user-cell">
             <div class="user-avatar-mini" style="background-color: var(--color-gold-dim); border-color: var(--color-gold); color: var(--color-gold-light);">${member.name.charAt(0)}</div>
             <div class="user-details">
-              <span style="font-weight: 600;">${member.name} ${member.name === 'Devasri' ? '(me)' : ''}</span>
+              <span style="font-weight: 600;">${member.name} ${member.email === AppState.user?.email ? '(me)' : ''}</span>
               <span class="user-email-mini">${member.email}</span>
             </div>
           </div>
@@ -1633,7 +1634,7 @@ function renderTeamTable() {
     }
     if (visible.includes('designation')) cellsHtml += `<td>${member.designation}</td>`;
     if (visible.includes('usertype')) {
-      if (member.name === 'Devasri') {
+      if (member.email === AppState.user?.email) {
         cellsHtml += `
           <td>
             <span class="badge-role">
@@ -1656,7 +1657,7 @@ function renderTeamTable() {
     }
     if (visible.includes('registeredOn')) cellsHtml += `<td class="cell-mono">${member.registeredOn}</td>`;
     if (visible.includes('status')) {
-      if (member.name === 'Devasri') {
+      if (member.email === AppState.user?.email) {
         cellsHtml += `
           <td>
             <span class="status-badge published">
@@ -1680,7 +1681,7 @@ function renderTeamTable() {
     if (visible.includes('actions')) {
       cellsHtml += `
         <td>
-          <button class="table-btn-action btn-revoke-member" data-email="${member.email}" style="color: var(--color-orange);" title="Deactivate/Revoke Member" ${member.name === 'Devasri' ? 'disabled style="opacity: 0.2; cursor: not-allowed;"' : ''}>
+          <button class="table-btn-action btn-revoke-member" data-email="${member.email}" style="color: var(--color-orange);" title="Deactivate/Revoke Member" ${member.email === AppState.user?.email ? 'disabled style="opacity: 0.2; cursor: not-allowed;"' : ''}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
           </button>
         </td>
@@ -1917,7 +1918,11 @@ function navigateToTab(tabId) {
 
   if (tabId === 'jobs') {
     breadcrumb.textContent = 'Jobs';
-    mainTitle.textContent = 'Good morning, Devasri 🌤️';
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const emoji = hour < 12 ? '🌤️' : hour < 17 ? '☀️' : '🌙';
+    const firstName = (AppState.user?.name || AppState.user?.email || 'there').split(' ')[0];
+    mainTitle.textContent = `${greeting}, ${firstName} ${emoji}`;
     subText.textContent = 'A squad of AI agents working for you';
     actionBtnText.textContent = 'New Job';
     document.getElementById('view-jobs').classList.add('active-view');
@@ -3881,7 +3886,135 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load state from localStorage on startup
   loadStateFromLocalStorage();
 
-  // Route to the correct tab based on query param
+  // ============================================================
+  // AUTH: Fetch current user + wire up logout + org switcher
+  // ============================================================
+  // API calls use relative paths — Next.js proxies /api/* → http://127.0.0.1:8000/api/*
+  const API_BASE = '';
+
+  async function initAuth() {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+      const user = await res.json();
+      AppState.user = user;
+
+      // Update sidebar user profile
+      const avatarEl = document.getElementById('user-avatar');
+      const nameEl   = document.getElementById('user-name');
+      const roleEl   = document.getElementById('user-role');
+      if (avatarEl) avatarEl.textContent = (user.name || user.email || 'U')[0].toUpperCase();
+      if (nameEl)   nameEl.textContent   = user.name || user.email || 'User';
+      const roleLabels = { super_admin: 'Super Admin', org_admin: 'Org Admin', member: 'Member' };
+      if (roleEl)   roleEl.textContent   = roleLabels[user.user_type] || user.user_type || 'User';
+
+      // Show/hide Team Access sidebar item based on role
+      const teamNav = document.querySelector('[data-tab="team"]');
+      if (teamNav) {
+        if (user.user_type === 'member') {
+          teamNav.style.display = 'none';
+        } else {
+          teamNav.style.display = '';
+        }
+      }
+
+      // Update greeting in banner
+      const bannerTitle = document.getElementById('header-main-title');
+      if (bannerTitle) {
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+        const emoji = hour < 12 ? '🌤️' : hour < 17 ? '☀️' : '🌙';
+        const firstName = (user.name || user.email || 'there').split(' ')[0];
+        bannerTitle.textContent = `${greeting}, ${firstName} ${emoji}`;
+      }
+
+      // Super admin: show org switcher
+      if (user.user_type === 'super_admin') {
+        const switcher = document.getElementById('org-switcher-wrap');
+        if (switcher) switcher.style.display = 'block';
+
+        try {
+          const orgsRes = await fetch(`${API_BASE}/api/auth/organisations`, { credentials: 'include' });
+          if (orgsRes.ok) {
+            const orgs = await orgsRes.json();
+            const list = document.getElementById('org-switcher-list');
+            const label = document.getElementById('org-switcher-label');
+
+            // Set current org label
+            if (label && user.organisation_name) label.textContent = user.organisation_name;
+
+            if (list) {
+              list.innerHTML = '';
+              orgs.forEach(org => {
+                const isActive = org.id === user.organisation_id;
+                const item = document.createElement('button');
+                item.style.cssText = `
+                  width:100%; text-align:left; background:${isActive ? 'rgba(var(--color-gold-rgb), 0.1)' : 'transparent'};
+                  border:none; border-radius:8px; padding:9px 12px; color:${isActive ? 'var(--color-gold)' : 'var(--color-text-muted, #a3a39e)'};
+                  font-size:0.82rem; font-weight:${isActive ? '700' : '500'}; cursor:pointer;
+                  transition:background 0.15s ease, color 0.15s ease; font-family:inherit;
+                  display:flex; align-items:center; gap:8px;
+                `;
+                item.innerHTML = `
+                  <span style="width:6px;height:6px;border-radius:50%;background:${isActive ? 'var(--color-gold)' : 'rgba(255,255,255,0.2)'};flex-shrink:0;"></span>
+                  ${org.org_name}
+                `;
+                item.onmouseenter = () => { if (!isActive) { item.style.background = 'rgba(255,255,255,0.05)'; item.style.color = 'var(--color-text-primary, #fafaf7)'; } };
+                item.onmouseleave = () => { if (!isActive) { item.style.background = 'transparent'; item.style.color = 'var(--color-text-muted, #a3a39e)'; } };
+                item.addEventListener('click', async () => {
+                  try {
+                    const switchRes = await fetch(`${API_BASE}/api/auth/switch-context`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ organisation_id: org.id }),
+                    });
+                    if (switchRes.ok) {
+                      document.getElementById('org-switcher-dropdown').style.display = 'none';
+                      window.location.reload();
+                    }
+                  } catch(e) { console.error('Switch org failed', e); }
+                });
+                list.appendChild(item);
+              });
+            }
+
+            // Toggle dropdown
+            const btn = document.getElementById('org-switcher-btn');
+            const dropdown = document.getElementById('org-switcher-dropdown');
+            if (btn && dropdown) {
+              btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = dropdown.style.display === 'block';
+                dropdown.style.display = isOpen ? 'none' : 'block';
+              });
+              document.addEventListener('click', () => { dropdown.style.display = 'none'; });
+              dropdown.addEventListener('click', e => e.stopPropagation());
+            }
+          }
+        } catch(e) { console.warn('Could not load orgs for switcher', e); }
+      }
+
+    } catch(e) {
+      console.error('Auth init failed:', e);
+    }
+  }
+
+
+  initAuth();
+
+  // Logout
+  addListenerSafe('btn-logout', 'click', async () => {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    } catch(e) {}
+    window.location.href = '/login';
+  });
+
+
   try {
     const urlParams = new URLSearchParams(window.location.search);
     const initialTab = urlParams.get('tab');
@@ -7847,11 +7980,6 @@ async function loadStateFromBackend() {
           registeredOn: m.registered_on ? new Date(m.registered_on).toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'Recently',
           status: m.status === 'active' ? 'Active' : m.status === 'invited' ? 'Invited' : 'Inactive'
         }));
-        const admin = teamData.members.find(m => m.user_type === 'org_admin');
-        if (admin) {
-          document.querySelectorAll('.user-name').forEach(el => el.textContent = admin.name);
-          document.querySelectorAll('.user-avatar').forEach(el => el.textContent = admin.name.charAt(0));
-        }
       }
     } catch (e) {
       console.error("Failed to load team from backend", e);

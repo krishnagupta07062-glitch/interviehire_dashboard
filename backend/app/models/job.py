@@ -40,11 +40,13 @@ class Job(Base):
     functional_interview_enabled = Column(Boolean, default=True)
 
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     created_by = relationship("User", foreign_keys=[created_by_id])
+    organisation = relationship("Organisation")
     applicants = relationship("Applicant", back_populates="job")
     collaborators = relationship("JobCollaborator", back_populates="job")
 

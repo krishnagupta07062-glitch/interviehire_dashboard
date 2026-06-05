@@ -1,23 +1,49 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from typing import Optional
+from uuid import UUID
+from typing import Optional, List
 from datetime import datetime
 
 from app.database import get_db
-from app.models.job import Job
+from app.models.job import Job, JobCollaborator
 from app.models.applicant import Applicant, ApplicantSource
+from app.models.user import User, UserType
 from app.schemas import UsageStatsOut, JobTableRow
+from app.utils.auth import get_current_user, get_active_org_id
 
 router = APIRouter()
+
+
+def _get_visible_job_ids(current_user: User, active_org_id: Optional[UUID], db: Session) -> List[UUID]:
+    org_id = active_org_id if current_user.user_type == UserType.super_admin else current_user.organisation_id
+    if not org_id:
+        return []
+    
+    query = db.query(Job).filter(Job.organisation_id == org_id)
+    if current_user.user_type == UserType.member:
+        query = query.join(Job.collaborators).filter(JobCollaborator.user_id == current_user.id)
+    
+    return [j.id for j in query.all()]
 
 
 @router.get("/stats", response_model=UsageStatsOut)
 def get_usage_stats(
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Applicant)
+    visible_job_ids = _get_visible_job_ids(current_user, active_org_id, db)
+    if not visible_job_ids:
+        return UsageStatsOut(
+            total_applicants=0, career_page=0, bulk_upload=0, scheduled=0, direct_link=0,
+            resume_analysed=0, resume_shortlisted=0, resume_waitlisted=0,
+            screening_attempted=0, screening_scheduled=0, screening_shortlisted=0, screening_waitlisted=0,
+            functional_attempted=0, functional_scheduled=0, functional_shortlisted=0, functional_waitlisted=0
+        )
+
+    query = db.query(Applicant).filter(Applicant.job_id.in_(visible_job_ids))
     if date_from:
         query = query.filter(Applicant.created_at >= date_from)
     if date_to:
@@ -37,7 +63,7 @@ def get_usage_stats(
         screening_attempted=sum(1 for a in applicants if a.screening_status is not None),
         screening_scheduled=sum(1 for a in applicants if a.screening_status and a.screening_status.value == "scheduled"),
         screening_shortlisted=sum(1 for a in applicants if a.screening_score and a.screening_score >= 60),
-        screening_waitlisted=0,  # define your own threshold
+        screening_waitlisted=0,
         functional_attempted=sum(1 for a in applicants if a.functional_status is not None),
         functional_scheduled=sum(1 for a in applicants if a.functional_status and a.functional_status.value == "scheduled"),
         functional_shortlisted=sum(1 for a in applicants if a.functional_score and a.functional_score >= 60),
@@ -46,8 +72,20 @@ def get_usage_stats(
 
 
 @router.get("/jobs-table")
-def get_jobs_table(db: Session = Depends(get_db)):
-    jobs = db.query(Job).all()
+def get_jobs_table(
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    org_id = active_org_id if current_user.user_type == UserType.super_admin else current_user.organisation_id
+    if not org_id:
+        return []
+
+    query = db.query(Job).filter(Job.organisation_id == org_id)
+    if current_user.user_type == UserType.member:
+        query = query.join(Job.collaborators).filter(JobCollaborator.user_id == current_user.id)
+
+    jobs = query.all()
     return [
         {
             "id": str(j.id),
@@ -63,8 +101,16 @@ def get_jobs_table(db: Session = Depends(get_db)):
 
 
 @router.get("/candidates-table")
-def get_candidates_table(db: Session = Depends(get_db)):
-    applicants = db.query(Applicant).all()
+def get_candidates_table(
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    visible_job_ids = _get_visible_job_ids(current_user, active_org_id, db)
+    if not visible_job_ids:
+        return []
+
+    applicants = db.query(Applicant).filter(Applicant.job_id.in_(visible_job_ids)).all()
     return [
         {
             "id": str(a.id),
