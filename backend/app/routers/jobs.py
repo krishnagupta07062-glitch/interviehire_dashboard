@@ -26,9 +26,16 @@ def _build_job_out(job: Job, db: Session) -> dict:
     """Helper to build JobOut with pipeline counts."""
     applicants = db.query(Applicant).filter(Applicant.job_id == job.id).all()
     import json
+    tags = []
+    if job.tags:
+        try:
+            tags = json.loads(job.tags)
+        except Exception:
+            tags = [t.strip() for t in job.tags.split(",") if t.strip()]
     return {
         **job.__dict__,
         "created_by_name": job.created_by.name if job.created_by else None,
+        "tags": tags,
         "pipeline": JobPipelineCounts(
             total=len(applicants),
             resume=sum(1 for a in applicants if a.resume_analysed),  # count analysed resumes
@@ -39,6 +46,7 @@ def _build_job_out(job: Job, db: Session) -> dict:
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None
     }
+
 
 
 # ─── JOB LIST ────────────────────────────────────────────────────────────────
@@ -1026,8 +1034,15 @@ USER EXTRA INSTRUCTIONS / PROMPT:
 
 def _build_job_detail_out(job: Job) -> dict:
     import json
+    tags = []
+    if job.tags:
+        try:
+            tags = json.loads(job.tags)
+        except Exception:
+            tags = [t.strip() for t in job.tags.split(",") if t.strip()]
     return {
         "id": job.id,
+        "custom_job_id": job.custom_job_id,
         "title": job.title,
         "role_name": job.role_name,
         "status": job.status,
@@ -1042,7 +1057,8 @@ def _build_job_detail_out(job: Job) -> dict:
         "created_at": job.created_at,
         "resume_parameters": json.loads(job.resume_parameters) if job.resume_parameters else None,
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
-        "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None
+        "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
+        "tags": tags
     }
 
 @router.get("/{job_id}", response_model=JobDetailOut)
@@ -1059,10 +1075,28 @@ def update_job_settings(job_id: UUID, data: JobSettingsIn, db: Session = Depends
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(job, key, value)
+        if key == "tags" and value is not None:
+            import json
+            setattr(job, key, json.dumps(value))
+        else:
+            setattr(job, key, value)
     db.commit()
     db.refresh(job)
     return _build_job_detail_out(job)
+
+@router.delete("/{job_id}")
+def delete_job(job_id: UUID, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    db.query(Applicant).filter(Applicant.job_id == job_id).delete(synchronize_session=False)
+    db.query(JobCollaborator).filter(JobCollaborator.job_id == job_id).delete(synchronize_session=False)
+    
+    db.delete(job)
+    db.commit()
+    return {"message": f"Job {job_id} successfully deleted"}
+
 
 @router.patch("/{job_id}/parameters", response_model=JobDetailOut)
 def update_job_parameters(job_id: UUID, data: JobParametersIn, db: Session = Depends(get_db)):

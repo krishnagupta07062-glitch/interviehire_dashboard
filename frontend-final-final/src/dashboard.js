@@ -1285,7 +1285,10 @@ function renderJobCards() {
       </div>
     `;
 
-    card.addEventListener('click', () => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-job-kebab') || e.target.closest('.job-kebab-dropdown')) {
+        return;
+      }
       navigateToJobDetail(jobId);
     });
 
@@ -4063,7 +4066,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
   });
 
-  window.handleJobKebab = function(jobId, action) {
+  window.handleJobKebab = async function(jobId, action) {
     document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
     const job = AppState.jobs.find(j => j.id === jobId);
     if (!job) return;
@@ -4075,24 +4078,42 @@ document.addEventListener('DOMContentLoaded', () => {
         openJobFlowView(jobId);
         break;
       case 'career-page': {
-        job.listedOnCareer = !job.listedOnCareer;
-        renderJobCards();
-        const label = job.listedOnCareer ? 'listed on' : 'removed from';
-        showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
+        const nextListed = !job.listedOnCareer;
+        try {
+          await apiFetch(`/api/jobs/${jobId}/settings`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_job_listed: nextListed })
+          });
+          await loadStateFromBackend();
+          const label = nextListed ? 'listed on' : 'removed from';
+          showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
+        } catch (err) {
+          console.error(err);
+          showPremiumToast('Failed to update career page status.', 'error');
+        }
         break;
       }
       case 'duplicate': {
-        const dup = JSON.parse(JSON.stringify(job));
-        dup.id = 'JOB-' + Math.random().toString(36).substr(2, 8).toUpperCase();
-        dup.cardName = (job.cardName || job.roleName) + ' (Copy)';
-        dup.status = 'draft';
-        dup.listedOnCareer = false;
-        dup.created = new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-        dup.pipeline = { total: 0, resume: 0, screening: 0, functional: 0 };
-        AppState.jobs.push(dup);
-        renderJobCards();
-        updateJobsCounters();
-        showPremiumToast(`Job duplicated as "${dup.cardName}".`, 'success');
+        const name = (job.cardName || job.roleName) + ' (Copy)';
+        try {
+          const createdJob = await apiFetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: name,
+              role_name: job.roleName || 'Untitled Role',
+              experience_band: job.experienceBand || 'Upto 2 Years',
+              status: 'draft',
+              description: job.description || ''
+            })
+          });
+          await loadStateFromBackend();
+          showPremiumToast(`Job duplicated as "${name}".`, 'success');
+        } catch (err) {
+          console.error(err);
+          showPremiumToast('Failed to duplicate job.', 'error');
+        }
         break;
       }
       case 'settings':
@@ -4103,27 +4124,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 100);
         break;
       case 'archive':
-        job.status = 'archived';
-        renderJobCards();
-        updateJobsCounters();
-        showPremiumToast(`"${job.cardName || job.roleName}" has been archived.`, 'success');
+        try {
+          await apiFetch(`/api/jobs/${jobId}/settings`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'archived' })
+          });
+          await loadStateFromBackend();
+          showPremiumToast(`"${job.cardName || job.roleName}" has been archived.`, 'success');
+        } catch (err) {
+          console.error(err);
+          showPremiumToast('Failed to archive job.', 'error');
+        }
         break;
       case 'unarchive':
-        job.status = 'published';
-        renderJobCards();
-        updateJobsCounters();
-        showPremiumToast(`"${job.cardName || job.roleName}" has been restored.`, 'success');
+        try {
+          await apiFetch(`/api/jobs/${jobId}/settings`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'published' })
+          });
+          await loadStateFromBackend();
+          showPremiumToast(`"${job.cardName || job.roleName}" has been restored.`, 'success');
+        } catch (err) {
+          console.error(err);
+          showPremiumToast('Failed to restore job.', 'error');
+        }
         break;
       case 'delete': {
         const name = job.cardName || job.roleName;
-        const idx = AppState.jobs.findIndex(j => j.id === jobId);
-        if (idx === -1) break;
-        AppState.jobs.splice(idx, 1);
-        AppState.candidates = AppState.candidates.filter(c => c.jobApplied !== job.roleName && c.jobApplied !== job.cardName);
-        renderJobCards();
-        updateJobsCounters();
-        updateSummaryMetrics();
-        showPremiumToast(`"${name}" has been permanently deleted.`, 'success');
+        if (confirm(`Are you sure you want to permanently delete "${name}"? This will also delete all associated candidates.`)) {
+          try {
+            await apiFetch(`/api/jobs/${jobId}`, {
+              method: 'DELETE'
+            });
+            await loadStateFromBackend();
+            showPremiumToast(`"${name}" has been permanently deleted.`, 'success');
+          } catch (err) {
+            console.error(err);
+            showPremiumToast('Failed to delete job.', 'error');
+          }
+        }
         break;
       }
     }
@@ -4192,7 +4233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  addListenerSafe('modal-edit-job-save', 'click', () => {
+  addListenerSafe('modal-edit-job-save', 'click', async () => {
     const job = AppState.jobs.find(j => j.id === editJobModalJobId);
     if (!job) return;
     const nameEl = document.getElementById('modal-edit-job-name');
@@ -4201,15 +4242,26 @@ document.addEventListener('DOMContentLoaded', () => {
       showPremiumToast('Job name is required.', 'error');
       return;
     }
-    job.cardName = nameVal;
     const idEl = document.getElementById('modal-edit-job-id');
     const idVal = idEl ? idEl.value.trim() : '';
-    if (idVal) job.customJobId = idVal;
-    job.tags = [...editJobModalTags];
-    closeEditJobModal();
-    renderJobCards();
-    updateJobsCounters();
-    showPremiumToast(`Job updated to "${nameVal}".`, 'success');
+    
+    try {
+      await apiFetch(`/api/jobs/${editJobModalJobId}/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: nameVal,
+          custom_job_id: idVal || null,
+          tags: [...editJobModalTags]
+        })
+      });
+      closeEditJobModal();
+      await loadStateFromBackend();
+      showPremiumToast(`Job updated to "${nameVal}".`, 'success');
+    } catch (err) {
+      console.error(err);
+      showPremiumToast('Failed to update job.', 'error');
+    }
   });
 
   const closeReportBtn = document.getElementById('btn-close-drawer-report');
@@ -7845,6 +7897,7 @@ async function loadStateFromBackend() {
           created: createdDate,
           status: j.status,
           customJobId: j.custom_job_id || '-',
+          tags: j.tags || [],
           experienceBand: j.experience_band || 'Upto 2 Years',
           createdBy: j.created_by_name || 'Devasri',
           description: j.description || '',

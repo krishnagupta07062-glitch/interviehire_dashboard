@@ -106,6 +106,7 @@ class JobOut(BaseModel):
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
+    tags: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
@@ -119,6 +120,7 @@ class JobListOut(BaseModel):
  
 class JobDetailOut(BaseModel):
     id: UUID
+    custom_job_id: Optional[str] = None
     title: str
     role_name: str
     status: JobStatus
@@ -134,6 +136,7 @@ class JobDetailOut(BaseModel):
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
+    tags: Optional[List[str]] = None
  
     class Config:
         from_attributes = True
@@ -147,6 +150,9 @@ class JobSettingsIn(BaseModel):
     role_name: Optional[str] = None
     experience_band: Optional[str] = None
     description: Optional[str] = None
+    custom_job_id: Optional[str] = None
+    tags: Optional[List[str]] = None
+    status: Optional[JobStatus] = None
  
 class JobCreateIn(BaseModel):
     title: str

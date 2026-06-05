@@ -960,9 +960,36 @@ export const html = `
         </div>
       </main>
 
-      <!-- ===================================== -->
-      <!-- SLIDE-OUT DRAWERS (FORM SECTIONS) -->
-      <!-- ===================================== -->
+      <!-- Modal: Edit Job Name -->
+      <div class="modal-overlay" id="modal-edit-job" style="display: none;">
+        <div class="modal-box">
+          <div class="modal-header">
+            <h2 class="modal-title">Edit Job Name</h2>
+            <button class="modal-close-btn" id="modal-edit-job-close" aria-label="Close">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-field">
+              <label class="modal-label">Job Name <span class="modal-required">*</span></label>
+              <input type="text" id="modal-edit-job-name" class="modal-input" placeholder="Enter job name" />
+            </div>
+            <div class="modal-field">
+              <label class="modal-label">Job Id <span class="modal-optional">(optional)</span></label>
+              <input type="text" id="modal-edit-job-id" class="modal-input" placeholder="e.g. 49298af015c842336b57a62a1" />
+            </div>
+            <div class="modal-field">
+              <label class="modal-label">Tags <span class="modal-optional">(optional)</span></label>
+              <div class="modal-tags-wrap">
+                <div class="modal-tags-list" id="modal-edit-tags-list"></div>
+                <input type="text" id="modal-edit-tags-input" class="modal-input" placeholder="Type and press Enter or comma" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="modal-save-btn" id="modal-edit-job-save">Save Changes</button>
+          </div>
+        </div>
+      </div>
+
       <div class="drawer-overlay" id="drawer-backdrop"></div>
 
       <!-- Drawer: Job Creator -->
