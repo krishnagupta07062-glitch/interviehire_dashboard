@@ -7,7 +7,7 @@ from sqlalchemy import func
 
 from app.database import get_db
 from app.models.job import Job, JobStatus, JobCollaborator
-from app.models.applicant import Applicant, ApplicantSource
+from app.models.applicant import Applicant, ApplicantSource, InterviewStatus
 from app.models.user import User, UserType
 from app.schemas import (
     JobListOut, JobOut, JobDetailOut, JobSettingsIn,
@@ -1333,6 +1333,8 @@ def add_applicant(
 ):
     job = _verify_job_access(job_id, current_user, active_org_id, db)
     applicant = Applicant(**data.model_dump(), job_id=job_id)
+    if applicant.source == ApplicantSource.scheduled:
+        applicant.screening_status = InterviewStatus.pending
     db.add(applicant)
     db.commit()
     db.refresh(applicant)
@@ -1366,6 +1368,8 @@ def add_applicants_bulk(
     created_applicants = []
     for app_in in data.applicants:
         applicant = Applicant(**app_in.model_dump(), job_id=job_id)
+        if applicant.source == ApplicantSource.scheduled:
+            applicant.screening_status = InterviewStatus.pending
         db.add(applicant)
         created_applicants.append(applicant)
         
@@ -1393,6 +1397,7 @@ def add_applicants_bulk(
 def upload_resumes(
     job_id: UUID,
     files: List[UploadFile] = File(...),
+    source: Optional[ApplicantSource] = None,
     current_user: User = Depends(get_current_user),
     active_org_id: Optional[UUID] = Depends(get_active_org_id),
     db: Session = Depends(get_db)
@@ -1427,6 +1432,10 @@ def upload_resumes(
             # Map resume to the existing candidate record
             existing_applicant.resume_url = file_path
             existing_applicant.resume_analysed = True
+            if source:
+                existing_applicant.source = source
+                if source == ApplicantSource.scheduled:
+                    existing_applicant.screening_status = InterviewStatus.pending
             db.add(existing_applicant)
             created_applicants.append(existing_applicant)
         else:
@@ -1436,11 +1445,13 @@ def upload_resumes(
                 name=cleaned_name,
                 email=email,
                 phone="+1 555-0199",
-                source=ApplicantSource.bulk_upload,
+                source=source or ApplicantSource.bulk_upload,
                 resume_url=file_path,
                 job_id=job_id,
                 resume_analysed=True
             )
+            if applicant.source == ApplicantSource.scheduled:
+                applicant.screening_status = InterviewStatus.pending
             db.add(applicant)
             created_applicants.append(applicant)
         

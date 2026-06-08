@@ -418,7 +418,7 @@ export default function LoginPage() {
 
               {error && <div className="auth-error">{error}</div>}
 
-              <button className="auth-btn" type="submit" disabled={loading}>
+              <button className="auth-btn" type="submit" disabled={loading} suppressHydrationWarning>
                 {loading && <span className="btn-spinner" />}
                 {loading ? 'Signing in…' : 'Sign in'}
               </button>

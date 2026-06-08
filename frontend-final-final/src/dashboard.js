@@ -1827,7 +1827,7 @@ function updateSummaryMetrics() {
   const filtered = filterCandidatesByDateRange(AppState.candidates);
 
   const totalApplicants = filtered.length;
-  const resumeCount = filtered.filter(c => c.status === 'Resume').length;
+  const resumeCount = filtered.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled')).length;
   const screeningCount = filtered.filter(c => c.status === 'Screening').length;
   const functionalCount = filtered.filter(c => c.status === 'Functional').length;
 
@@ -2072,6 +2072,8 @@ function navigateToTab(tabId) {
     actionBtn.style.display = 'none'; // No primary CTA for career config page
     document.getElementById('view-career').classList.add('active-view');
     soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.15);
+  } else if (tabId === 'settings') {
+    navigateToSubtab('settings-general');
   }
 }
 
@@ -2110,6 +2112,12 @@ function navigateToCreateJob() {
   createJobUploadedFileName = null;
   createJobUploadedText = null;
   createJobUploadedFile = null;
+
+  const btnContinue = document.getElementById('btn-create-job-continue');
+  if (btnContinue) {
+    btnContinue.disabled = false;
+    btnContinue.innerHTML = `Continue <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
+  }
 
   soundEngine.playChime([392, 523.25], 0.12, 0.1);
 }
@@ -2401,7 +2409,7 @@ function recalculateJobPipelines() {
     const jobCandidates = dateFiltered.filter(c => c.jobApplied === job.roleName || c.jobApplied === job.cardName);
 
     job.pipeline.total = jobCandidates.length;
-    job.pipeline.resume = jobCandidates.filter(c => c.status === 'Resume').length;
+    job.pipeline.resume = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled')).length;
     job.pipeline.screening = jobCandidates.filter(c => c.status === 'Screening').length;
     job.pipeline.functional = jobCandidates.filter(c => c.status === 'Functional').length;
   });
@@ -3466,7 +3474,7 @@ function renderFunnelStages(job) {
 
   const stageFilters = {
     'Total Candidates': () => jobCandidates,
-    'Resume Analysis': () => jobCandidates.filter(c => c.status === 'Resume'),
+    'Resume Analysis': () => jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled')),
     'Recruiter Screening': () => jobCandidates.filter(c => c.status === 'Screening'),
     'Functional Interview': () => jobCandidates.filter(c => c.status === 'Functional'),
     'Completed': () => jobCandidates.filter(c => c.status === 'Functional' || c.status === 'Hired'),
@@ -6126,7 +6134,7 @@ async function importCsvCandidates() {
     name: cand.name,
     email: cand.email,
     phone: cand.phone || null,
-    source: 'bulk_upload'
+    source: currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload'
   }));
 
   try {
@@ -6257,7 +6265,8 @@ async function importResumesCandidates() {
   });
 
   try {
-    const res = await fetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes`, {
+    const sourceParam = currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload';
+    const res = await fetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes?source=${sourceParam}`, {
       method: 'POST',
       credentials: 'include',
       body: formData
@@ -6396,7 +6405,7 @@ async function importManualQueue() {
             name: cand.name,
             email: cand.email,
             phone: cand.phone || null,
-            source: 'direct_link'
+            source: currentSourcingMode === 'schedule' ? 'scheduled' : 'direct_link'
           })
         })
       )
@@ -6760,18 +6769,33 @@ function bindResumeAnalysisEvents(job) {
       if (fileInput.files[0]) handleResumeFile(cid, fileInput.files[0]);
     });
 
-    analyseBtn?.addEventListener('click', () => {
-      fileInput?.click();
-      const handler = () => {
-        if (fileInput.files[0]) {
-          handleResumeFile(cid, fileInput.files[0]);
-          setTimeout(() => runResumeAnalysis(cid, job), 200);
-        } else {
-          runResumeAnalysis(cid, job);
+    analyseBtn?.addEventListener('click', async () => {
+      const candidate = AppState.candidates.find(x => x.id === cid);
+      if (candidate && candidate.resumeUrl) {
+        if (!resumeTextCache[cid]) {
+          try {
+            const data = await apiFetch(`/api/jobs/applicants/${cid}/resume-text`);
+            if (data && data.text) {
+              resumeTextCache[cid] = data.text;
+            }
+          } catch (err) {
+            console.error("Failed to fetch resume text:", err);
+          }
         }
-        fileInput.removeEventListener('change', handler);
-      };
-      fileInput?.addEventListener('change', handler);
+        runResumeAnalysis(cid, job);
+      } else {
+        fileInput?.click();
+        const handler = () => {
+          if (fileInput.files[0]) {
+            handleResumeFile(cid, fileInput.files[0]);
+            setTimeout(() => runResumeAnalysis(cid, job), 200);
+          } else {
+            runResumeAnalysis(cid, job);
+          }
+          fileInput.removeEventListener('change', handler);
+        };
+        fileInput?.addEventListener('change', handler);
+      }
     });
 
     viewBtn?.addEventListener('click', () => {
@@ -6975,7 +6999,7 @@ function toggleResumeCriteriaEdit(job) {
         const jTitle = c.jobApplied;
         return jTitle === job.roleName || jTitle === job.cardName;
       });
-      const resumeCands = jobCandidates.filter(c => c.status === 'Resume');
+      const resumeCands = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled'));
       // trigger full re-render by calling renderJobDetailPanes
       if (typeof renderJobDetailPanes === 'function') renderJobDetailPanes(job);
     }
@@ -7221,7 +7245,7 @@ function renderJobDetailPanes(job) {
   // 1. Resume pane — criteria config + candidates table
   const resumeList = document.getElementById('list-stage-resume');
   if (resumeList) {
-    const resumeCands = jobCandidates.filter(c => c.status === 'Resume');
+    const resumeCands = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled'));
     const criteria = job.resumeCriteria || {};
     const mustHave = criteria.mustHave || [];
     const redFlags = criteria.redFlags || [];
@@ -7229,6 +7253,14 @@ function renderJobDetailPanes(job) {
     const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
 
     const criteriaHTML = `
+      <div class="ra-candidates-section">
+        <div class="ra-candidates-header">
+          <h3 class="ra-candidates-title">Candidates in Resume Analysis</h3>
+          <span class="ra-candidates-count">${resumeCands.length} candidate${resumeCands.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="jd-stage-candidates-list" id="list-stage-resume-candidates"></div>
+      </div>
+
       <div class="ra-config-section">
         <div class="ra-config-header">
           <div class="ra-config-header-left">
@@ -7309,14 +7341,6 @@ function renderJobDetailPanes(job) {
             `).join('')}
           </div>
         </div>
-      </div>
-
-      <div class="ra-candidates-section">
-        <div class="ra-candidates-header">
-          <h3 class="ra-candidates-title">Candidates in Resume Analysis</h3>
-          <span class="ra-candidates-count">${resumeCands.length} candidate${resumeCands.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="jd-stage-candidates-list" id="list-stage-resume-candidates"></div>
       </div>
     `;
 

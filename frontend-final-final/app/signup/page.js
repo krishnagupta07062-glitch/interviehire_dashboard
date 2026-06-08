@@ -402,7 +402,7 @@ export default function SignupPage() {
 
               {error && <div className="auth-error">{error}</div>}
 
-              <button className="auth-btn" type="submit" disabled={loading}>
+              <button className="auth-btn" type="submit" disabled={loading} suppressHydrationWarning>
                 {loading && <span className="btn-spinner" />}
                 {loading ? 'Creating account…' : 'Create account'}
               </button>
