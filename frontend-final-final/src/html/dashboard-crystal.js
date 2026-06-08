@@ -1122,6 +1122,9 @@ export const html = `
           <!-- JOB FLOW PIPELINE VIEW -->
           <!-- ===================================== -->
           <section class="dashboard-view" id="view-job-flow">
+            <div class="jf-view-actions" style="display: flex; justify-content: flex-end; padding: 16px 32px 0px; margin-bottom: -16px;">
+              <button class="btn-action" id="btn-publish-job" style="display: none;">Publish Job</button>
+            </div>
             <div class="jf-layout">
               <div class="jf-pipeline-panel" id="jf-pipeline-panel"></div>
               <div class="jf-config-panel" id="jf-config-panel"></div>

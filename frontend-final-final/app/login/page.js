@@ -397,6 +397,7 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
                   required
+                  suppressHydrationWarning
                 />
               </div>
 
@@ -411,6 +412,7 @@ export default function LoginPage() {
                   value={formData.password}
                   onChange={e => setFormData(p => ({ ...p, password: e.target.value }))}
                   required
+                  suppressHydrationWarning
                 />
               </div>
 

@@ -388,13 +388,13 @@ export function initLandingPage() {
       scrollY = window.scrollY;
     }, { signal });
 
-    // Animation Frame Loop
-    const clock = new THREE.Clock();
+    // Animation Frame Loop — use performance.now() instead of deprecated THREE.Clock
+    const startTime = performance.now();
 
     function animate() {
       animationFrameId = requestAnimationFrame(animate);
 
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = (performance.now() - startTime) / 1000; // seconds
 
       // 1. SWARM LERP (Morph Positions & Colors)
       const currentPos = pointsGeometry.attributes.position.array;

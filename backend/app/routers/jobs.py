@@ -620,11 +620,39 @@ USER EXTRA INSTRUCTIONS / PROMPT:
     content_key = file.filename.lower()
     prompt_key = prompt.lower() if prompt else ""
     
-    # Default values (General role)
-    role_name = "Senior Software Engineer"
-    card_name = "Full Stack Core Architect"
+    # Parse the header of the PDF or clean the filename to get the job title
+    import os, re
+    
+    def extract_job_title_from_pdf_or_filename(text, filename):
+        # Clean filename first
+        base = os.path.splitext(filename)[0]
+        base_clean = base.replace("_", " ").replace("-", " ").strip()
+        base_clean = re.sub(r"\b(jd|job description|job|hiring|description|req|specification|spec|pdf|docx|txt)\b", "", base_clean, flags=re.IGNORECASE)
+        base_clean = " ".join(base_clean.split())
+        fallback_title = " ".join([w.capitalize() for w in base_clean.split()]) if base_clean else "Software Engineer"
+
+        # Try to extract from first line of text
+        if text:
+            # Clean up double spaces, newlines, etc.
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            if not lines:
+                # Split by other dividers if it's a single line
+                lines = [l.strip() for l in re.split(r"[\r\n\t]+", text) if l.strip()]
+            
+            for line in lines[:3]:
+                # If the line is short, doesn't contain PDF formatting junk, and looks like a title
+                line_clean = re.sub(r"[^\w\s\-\&\/\+\.]", "", line).strip()
+                words = line_clean.split()
+                if 2 <= len(words) <= 8 and not any(w.lower() in ["%pdf", "obj", "endobj", "stream", "xref"] for w in words):
+                    return " ".join([w.capitalize() for w in words])
+        
+        return fallback_title
+
+    extracted_title = extract_job_title_from_pdf_or_filename(file_text, file.filename)
+    role_name = extracted_title
+    card_name = extracted_title
     experience_band = "3-6 Years"
-    description = "We are seeking a talented Senior Software Engineer to help build and maintain our high-performance cloud applications, design robust APIs, and mentor junior developers."
+    description = f"We are seeking a talented {role_name} to help build and maintain our high-performance applications, design robust APIs, and support our growing team."
     skills = "Python, PostgreSQL, React, TypeScript, Docker, AWS"
     
     screening_questions = [

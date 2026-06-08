@@ -347,6 +347,7 @@ export default function SignupPage() {
                   value={formData.name}
                   onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
                   required
+                  suppressHydrationWarning
                 />
               </div>
 
@@ -361,6 +362,7 @@ export default function SignupPage() {
                   value={formData.email}
                   onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
                   required
+                  suppressHydrationWarning
                 />
                 <span className="auth-hint">
                   If you were invited, use the same email address.
@@ -379,6 +381,7 @@ export default function SignupPage() {
                     value={formData.password}
                     onChange={e => setFormData(p => ({ ...p, password: e.target.value }))}
                     required
+                    suppressHydrationWarning
                   />
                 </div>
                 <div className="auth-field">
@@ -392,6 +395,7 @@ export default function SignupPage() {
                     value={formData.confirm}
                     onChange={e => setFormData(p => ({ ...p, confirm: e.target.value }))}
                     required
+                    suppressHydrationWarning
                   />
                 </div>
               </div>

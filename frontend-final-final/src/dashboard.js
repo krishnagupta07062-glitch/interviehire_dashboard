@@ -6,7 +6,12 @@ if (typeof window !== 'undefined') {
   window.THREE = THREE_import;
 }
 
-export function initDashboardPage() {
+let nextRouter = null;
+
+export function initDashboardPage(router) {
+  if (router) {
+    nextRouter = router;
+  }
   const controller = new AbortController();
   const { signal } = controller;
 
@@ -1875,20 +1880,117 @@ function updateSummaryMetrics() {
 // VIEW SWITCHER ROUTING
 // ==========================================
 // ==========================================
+// PATH-BASED URL ROUTER HELPERS
+// ==========================================
+function getRouteFromPathname() {
+  if (typeof window === 'undefined') return { tab: 'jobs' };
+  const path = window.location.pathname;
+  const segments = path.split('/').filter(Boolean);
+  const prefix = segments[0] || 'dashboard'; // e.g. 'dashboard', 'dashboard-crystal', 'dashboard-glass'
+  const subSegments = segments.slice(1);
+  
+  if (subSegments.length === 0) {
+    return { tab: 'jobs' };
+  }
+  
+  const first = subSegments[0];
+  
+  if (first === 'jobs') {
+    if (subSegments.length === 1) {
+      return { tab: 'jobs' };
+    }
+    if (subSegments[1] === 'create') {
+      if (subSegments[2] === 'aria') {
+        return { tab: 'aria-chat' };
+      }
+      return { tab: 'create-job' };
+    }
+    
+    const jobId = subSegments[1];
+    if (subSegments[2] === 'flow') {
+      return { tab: 'job-flow', jobId };
+    }
+    if (subSegments[2] === 'sourcing') {
+      return { tab: 'sourcing', jobId };
+    }
+    return { tab: 'job-detail', jobId };
+  }
+  
+  if (first === 'analytics') return { tab: 'analytics' };
+  if (first === 'swarm') return { tab: 'swarm' };
+  if (first === 'team') return { tab: 'team' };
+  if (first === 'career') return { tab: 'career' };
+  if (first === 'settings') return { tab: 'settings' };
+  
+  return { tab: 'jobs' };
+}
+
+function updateURLRoute(tabId, jobId = null) {
+  try {
+    if (typeof window === 'undefined') return;
+    const path = window.location.pathname;
+    const segments = path.split('/').filter(Boolean);
+    const prefix = segments[0] || 'dashboard';
+    
+    let newPath = `/${prefix}`;
+    if (tabId === 'jobs') {
+      newPath = `/${prefix}/jobs`;
+    } else if (tabId === 'create-job') {
+      newPath = `/${prefix}/jobs/create`;
+    } else if (tabId === 'aria-chat') {
+      newPath = `/${prefix}/jobs/create/aria`;
+    } else if (tabId === 'job-detail' && jobId) {
+      newPath = `/${prefix}/jobs/${jobId}`;
+    } else if (tabId === 'job-flow' && jobId) {
+      newPath = `/${prefix}/jobs/${jobId}/flow`;
+    } else if (tabId === 'sourcing' && jobId) {
+      newPath = `/${prefix}/jobs/${jobId}/sourcing`;
+    } else if (tabId === 'analytics') {
+      newPath = `/${prefix}/analytics`;
+    } else if (tabId === 'swarm') {
+      newPath = `/${prefix}/swarm`;
+    } else if (tabId === 'team') {
+      newPath = `/${prefix}/team`;
+    } else if (tabId === 'career') {
+      newPath = `/${prefix}/career`;
+    } else if (tabId === 'settings') {
+      newPath = `/${prefix}/settings`;
+    }
+    
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, '', newPath);
+    }
+  } catch (e) {
+    console.error("Failed to update URL route:", e);
+  }
+}
+
+function handleInitialRouting() {
+  const route = getRouteFromPathname();
+  if (route.tab === 'job-detail' && route.jobId) {
+    navigateToJobDetail(route.jobId);
+  } else if (route.tab === 'job-flow' && route.jobId) {
+    openJobFlowView(route.jobId);
+  } else if (route.tab === 'sourcing' && route.jobId) {
+    navigateToSourcing(route.jobId);
+  } else if (route.tab === 'create-job') {
+    navigateToCreateJob();
+  } else if (route.tab === 'aria-chat') {
+    navigateToAriaChat();
+  } else {
+    navigateToTab(route.tab || 'jobs');
+  }
+}
+window.handleInitialRouting = handleInitialRouting;
+
+// ==========================================
 // VIEW SWITCHER ROUTING
 // ==========================================
 function navigateToTab(tabId) {
   AppState.activeTab = tabId;
   AppState.activeSubtab = '';
 
-  // Update browser URL query parameter dynamically without full page reload
-  try {
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', tabId);
-    window.history.pushState(null, '', url.pathname + url.search);
-  } catch (e) {
-    console.error("Failed to update URL query parameter:", e);
-  }
+  updateURLRoute(tabId);
 
   // Update Sidebar Active state
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -1980,6 +2082,7 @@ function navigateToTab(tabId) {
 function navigateToCreateJob() {
   AppState.activeTab = 'create-job';
   AppState.activeSubtab = '';
+  updateURLRoute('create-job');
 
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === 'jobs');
@@ -2006,6 +2109,7 @@ function navigateToCreateJob() {
   if (fileInput) fileInput.value = '';
   createJobUploadedFileName = null;
   createJobUploadedText = null;
+  createJobUploadedFile = null;
 
   soundEngine.playChime([392, 523.25], 0.12, 0.1);
 }
@@ -2015,6 +2119,7 @@ let ariaChatHistory = [];
 function navigateToAriaChat() {
   AppState.activeTab = 'aria-chat';
   AppState.activeSubtab = '';
+  updateURLRoute('aria-chat');
 
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === 'jobs');
@@ -2114,15 +2219,15 @@ If you need more info, respond ONLY with this JSON (no extra text):
             title: parsed.cardName || parsed.roleName,
             role_name: parsed.roleName,
             experience_band: parsed.experienceBand || 'Upto 2 Years',
-            status: 'published',
+            status: 'draft',
             description: parsed.description || ''
           })
         });
         if (createdJob) {
           await loadStateFromBackend();
-          appendAriaMessage(`Perfect! I've created the "${parsed.roleName}" job posting. Taking you to the job detail now...`, 'aria');
+          appendAriaMessage(`Perfect! I've created the "${parsed.roleName}" job posting. Taking you to the job flow now...`, 'aria');
           soundEngine.playChime([329.63, 392, 523.25, 659.25], 0.2, 0.08);
-          setTimeout(() => navigateToJobDetail(String(createdJob.id)), 1400);
+          setTimeout(() => openJobFlowView(String(createdJob.id)), 1400);
         } else {
           throw new Error("Failed to create job");
         }
@@ -2151,6 +2256,7 @@ If you need more info, respond ONLY with this JSON (no extra text):
 
 let createJobUploadedFileName = null;
 let createJobUploadedText = null;
+let createJobUploadedFile = null;
 
 function navigateToSubtab(subtabId) {
   AppState.activeTab = 'settings';
@@ -2827,6 +2933,7 @@ function navigateToJobDetail(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'job-detail';
+  updateURLRoute('job-detail', jobId);
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -2907,6 +3014,7 @@ function openJobFlowView(jobId) {
 
   AppState.activeTab = 'job-flow';
   AppState.activeJobId = jobId;
+  updateURLRoute('job-flow', jobId);
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -2932,6 +3040,38 @@ function openJobFlowView(jobId) {
   document.getElementById('header-main-title').textContent = job.cardName || job.roleName;
   document.getElementById('header-sub-text').textContent = 'Pipeline Configuration';
   document.getElementById('header-action-btn').style.display = 'none';
+
+  // Publish Job Button binding
+  const publishBtn = document.getElementById('btn-publish-job');
+  if (publishBtn) {
+    if (job.status === 'draft') {
+      publishBtn.style.display = 'inline-flex';
+      const newPublishBtn = publishBtn.cloneNode(true);
+      publishBtn.parentNode.replaceChild(newPublishBtn, publishBtn);
+      newPublishBtn.addEventListener('click', async () => {
+        try {
+          const updated = await apiFetch(`/api/jobs/${jobId}/settings`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'published' })
+          });
+          if (updated) {
+            await loadStateFromBackend();
+            showPremiumToast("Job published successfully!", "success");
+            soundEngine.playChime([261.63, 329.63, 392, 523.25], 0.25, 0.08);
+            navigateToSourcing(jobId);
+          } else {
+            throw new Error("Failed to publish job");
+          }
+        } catch (err) {
+          console.error("Publishing job failed:", err);
+          showPremiumToast(`Error: ${err.message}`, "error");
+        }
+      });
+    } else {
+      publishBtn.style.display = 'none';
+    }
+  }
 
   renderJobFlowPipeline(job);
   renderJobFlowConfig(job, 'careerPage');
@@ -3880,7 +4020,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
   function addListenerSafe(id, type, callback) {
     const el = document.getElementById(id);
-    if (el) el.addEventListener(type, callback);
+    if (el) el.addEventListener(type, callback, { signal });
   }
 
   // Load state from localStorage on startup
@@ -3896,6 +4036,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
       if (res.status === 401) {
+        try {
+          await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+        } catch (e) {}
         window.location.href = '/login';
         return;
       }
@@ -3982,18 +4125,7 @@ document.addEventListener('DOMContentLoaded', () => {
               });
             }
 
-            // Toggle dropdown
-            const btn = document.getElementById('org-switcher-btn');
-            const dropdown = document.getElementById('org-switcher-dropdown');
-            if (btn && dropdown) {
-              btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const isOpen = dropdown.style.display === 'block';
-                dropdown.style.display = isOpen ? 'none' : 'block';
-              });
-              document.addEventListener('click', () => { dropdown.style.display = 'none'; });
-              dropdown.addEventListener('click', e => e.stopPropagation());
-            }
+            // Toggle dropdown (registered globally on startup now)
           }
         } catch(e) { console.warn('Could not load orgs for switcher', e); }
       }
@@ -4015,18 +4147,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 
-  try {
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialTab = urlParams.get('tab');
-    if (initialTab) {
-      navigateToTab(initialTab);
-    } else {
-      navigateToTab('jobs');
-    }
-  } catch (e) {
-    console.error("Failed to parse initial tab query parameter:", e);
-    navigateToTab('jobs');
-  }
+  // Handle popstate for back/forward navigation routing
+  window.addEventListener('popstate', () => {
+    handleInitialRouting();
+  });
 
   // Sidebar Collapse Toggle
   const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
@@ -4038,6 +4162,19 @@ document.addEventListener('DOMContentLoaded', () => {
         soundEngine.playClick();
       }
     });
+  }
+
+  // Org Switcher Dropdown Toggle
+  const orgBtn = document.getElementById('org-switcher-btn');
+  const orgDropdown = document.getElementById('org-switcher-dropdown');
+  if (orgBtn && orgDropdown) {
+    orgBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = orgDropdown.style.display === 'block';
+      orgDropdown.style.display = isOpen ? 'none' : 'block';
+    }, { signal });
+    document.addEventListener('click', () => { if (orgDropdown) orgDropdown.style.display = 'none'; });
+    orgDropdown.addEventListener('click', e => e.stopPropagation(), { signal });
   }
 
   // Breadcrumbs: Client Portal Click
@@ -4065,7 +4202,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       navigateToTab(tabId);
-    });
+    }, { signal });
   });
 
   // Settings subnav clicks
@@ -4074,7 +4211,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.stopPropagation();
       const subtabId = subItem.getAttribute('data-subtab');
       navigateToSubtab(subtabId);
-    });
+    }, { signal });
   });
 
   // B. Contextual Action Button (Header)
@@ -4585,7 +4722,7 @@ document.addEventListener('DOMContentLoaded', () => {
             role_name: roleName,
             experience_band: expBand,
             custom_job_id: customId === '-' ? null : customId,
-            status: 'published',
+            status: 'draft',
             resume_analysis_enabled: addResume,
             recruiter_screening_enabled: addScreening,
             functional_interview_enabled: addFunctional,
@@ -4600,6 +4737,7 @@ document.addEventListener('DOMContentLoaded', () => {
           createJobForm.reset();
           showPremiumToast(`Job "${roleName}" created successfully.`, "success");
           soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Melodic confirmation chime
+          openJobFlowView(String(createdJob.id));
         } else {
           throw new Error("Failed to create job");
         }
@@ -5050,6 +5188,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleCreateJobFile(file) {
     if (!file) return;
     createJobUploadedFileName = file.name;
+    createJobUploadedFile = file;
     const preview = document.getElementById('dropzone-file-preview');
     if (preview) {
       preview.style.display = 'flex';
@@ -5062,6 +5201,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         createJobUploadedFileName = null;
         createJobUploadedText = null;
+        createJobUploadedFile = null;
         preview.style.display = 'none';
         preview.innerHTML = '';
         if (jdDropzone) jdDropzone.classList.remove('has-file');
@@ -5094,7 +5234,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Continue button — process file or pasted text with DeepSeek
+  // Continue button — process file or pasted text with DeepSeek/fallback parser
   const btnContinue = document.getElementById('btn-create-job-continue');
   if (btnContinue) {
     btnContinue.addEventListener('click', async () => {
@@ -5114,39 +5254,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
       soundEngine.playChime([392, 440], 0.1, 0.1);
 
-      const systemPrompt = `You are a job description parser. Extract structured job info from the provided text.
-Return ONLY valid JSON:
-{"roleName":"exact job title","cardName":"job title + brief context","experienceBand":"one of: Upto 2 Years | 1-4 Years | 3-6 Years | 5+ Years | 8+ Years","description":"clean 2-3 sentence professional job description"}`;
-
       try {
-        const response = await callDeepSeekAPI([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Parse this job description:\n\n${textToProcess.slice(0, 2500)}` }
-        ], true);
+        const formData = new FormData();
+        let fileToSend = createJobUploadedFile;
+        if (!fileToSend && pastedText) {
+          fileToSend = new File([pastedText], "job_description.txt", { type: "text/plain" });
+        }
+        if (!fileToSend) {
+          throw new Error("No file or pasted text found");
+        }
+        formData.append('file', fileToSend);
 
-        const parsed = JSON.parse(sanitizeJSONResponse(response));
+        const parsed = await apiFetch('/api/jobs/extract-jd', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!parsed) {
+          throw new Error("Failed to extract job details from server");
+        }
+
         const createdJob = await apiFetch('/api/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: parsed.cardName || parsed.roleName,
-            role_name: parsed.roleName,
-            experience_band: parsed.experienceBand || 'Upto 2 Years',
-            status: 'published',
-            description: parsed.description || textToProcess.slice(0, 500)
+            title: parsed.card_name || parsed.role_name,
+            role_name: parsed.role_name,
+            experience_band: parsed.experience_band || 'Upto 2 Years',
+            status: 'draft',
+            description: parsed.description || textToProcess.slice(0, 500),
+            resume_parameters: parsed.resume_parameters,
+            screening_parameters: parsed.screening_parameters,
+            functional_parameters: parsed.functional_parameters
           })
         });
+
         if (createdJob) {
           await loadStateFromBackend();
-          showPremiumToast(`Job "${parsed.roleName}" created successfully.`, "success");
+          showPremiumToast(`Job "${parsed.role_name}" created successfully.`, "success");
           soundEngine.playChime([329.63, 392, 523.25], 0.2, 0.08);
-          navigateToJobDetail(String(createdJob.id));
+          openJobFlowView(String(createdJob.id));
         } else {
           throw new Error("Failed to create job");
         }
       } catch (err) {
         console.error("Job creation from JD failed:", err);
-        showPremiumToast("Failed to process job description. Check API status.", "error");
+        showPremiumToast("Failed to process job description.", "error");
         btnContinue.disabled = false;
         btnContinue.innerHTML = originalHTML;
       }
@@ -5770,6 +5923,7 @@ function navigateToSourcing(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'sourcing';
+  updateURLRoute('sourcing', jobId);
 
   // Highlight Jobs sidebar
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -6105,6 +6259,7 @@ async function importResumesCandidates() {
   try {
     const res = await fetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes`, {
       method: 'POST',
+      credentials: 'include',
       body: formData
     });
     if (!res.ok) {
@@ -6223,6 +6378,49 @@ async function importManualQueue() {
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
+
+  const btnManualImport = document.getElementById('btn-manual-import');
+  if (btnManualImport) {
+    btnManualImport.disabled = true;
+    btnManualImport.textContent = 'Importing...';
+  }
+
+  try {
+    // Submit each candidate to the backend
+    const results = await Promise.all(
+      sourcingQueue.map(cand =>
+        apiFetch(`/api/jobs/${activeJob.id}/applicants`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: cand.name,
+            email: cand.email,
+            phone: cand.phone || null,
+            source: 'direct_link'
+          })
+        })
+      )
+    );
+
+    const successCount = results.filter(r => r).length;
+    if (successCount > 0) {
+      soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
+      showPremiumToast(`Successfully imported ${successCount} candidate(s) into "${activeJob.roleName}".`, 'success');
+      sourcingQueue = [];
+      renderManualQueue();
+      await loadStateFromBackend();
+    } else {
+      throw new Error('No candidates were imported successfully');
+    }
+  } catch (e) {
+    console.error('Failed to import manual queue:', e);
+    showPremiumToast(`Error: ${e.message}`, 'error');
+  } finally {
+    if (btnManualImport) {
+      btnManualImport.disabled = false;
+      btnManualImport.textContent = 'Import Queue';
+    }
+  }
 
   navigateToJobDetail(AppState.activeJobId);
 }
@@ -7846,9 +8044,11 @@ function toggleCardPlayer(id) {
 let currentStagedQuestions = [];
 
 let socket = null;
+let wsReconnectTimeout = null;
 
 async function apiFetch(url, options = {}) {
-  const res = await fetch(url, options);
+  // Always include credentials so the auth cookie is sent with every request
+  const res = await fetch(url, { credentials: 'include', ...options });
   if (!res.ok) {
     let errorDetail = '';
     try {
@@ -8147,6 +8347,22 @@ async function loadStateFromBackend() {
 }
 
 function connectWebSocket() {
+  if (wsReconnectTimeout) {
+    clearTimeout(wsReconnectTimeout);
+    wsReconnectTimeout = null;
+  }
+  if (socket) {
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.onmessage = null;
+    socket.onopen = null;
+    try { socket.close(); } catch(e) {}
+    socket = null;
+  }
+
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsHost = (window.location.host === 'localhost:3000' || window.location.host === '127.0.0.1:3000') ? '127.0.0.1:8000' : window.location.host;
   const wsUrl = `${wsProto}//${wsHost}/ws`;
@@ -8177,7 +8393,7 @@ function connectWebSocket() {
   
   socket.onclose = () => {
     console.log("WebSocket disconnected. Retrying in 5 seconds...");
-    setTimeout(connectWebSocket, 5000);
+    wsReconnectTimeout = setTimeout(connectWebSocket, 5000);
   };
   
   socket.onerror = (err) => {
@@ -8185,9 +8401,10 @@ function connectWebSocket() {
   };
 }
 
-function loadStateFromLocalStorage() {
-  loadStateFromBackend();
+async function loadStateFromLocalStorage() {
+  await loadStateFromBackend();
   connectWebSocket();
+  handleInitialRouting();
 }
 
 async function callDeepSeekAPI(messages, jsonMode = false) {
@@ -9383,6 +9600,19 @@ function initCrystalAnimations() {
       try { obs.disconnect(); } catch(e) {}
     });
     activeObservers.clear();
+
+    if (wsReconnectTimeout) {
+      clearTimeout(wsReconnectTimeout);
+      wsReconnectTimeout = null;
+    }
+    if (socket) {
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onmessage = null;
+      socket.onopen = null;
+      try { socket.close(); } catch(e) {}
+      socket = null;
+    }
 
     // Clean up window attachments to avoid memory leaks or cross-page pollution
     delete window.navigateToJobDetail;

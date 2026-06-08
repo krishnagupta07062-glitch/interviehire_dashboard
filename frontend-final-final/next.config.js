@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  distDir: 'dist',
+  // Disable React StrictMode to prevent double-mount in development.
+  // The dashboard is an imperative SPA initialized via useEffect and is NOT
+  // idempotent — double-mounting causes duplicate event listeners and broken state.
+  reactStrictMode: false,
+
   async rewrites() {
     return [
       {
