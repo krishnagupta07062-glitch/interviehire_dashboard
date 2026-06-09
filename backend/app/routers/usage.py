@@ -111,6 +111,71 @@ def get_candidates_table(
         return []
 
     applicants = db.query(Applicant).filter(Applicant.job_id.in_(visible_job_ids)).all()
+
+    # Sync with InterviewSession
+    from app.models.ai_integration import InterviewSession, SessionStatus, Severity
+    from app.models.applicant import InterviewStatus, CheatProbability
+
+    session_ids = [str(a.id) for a in applicants]
+    sessions = db.query(InterviewSession).filter(InterviewSession.id.in_(session_ids)).all()
+    sessions_by_id = {s.id: s for s in sessions}
+
+    for a in applicants:
+        s = sessions_by_id.get(str(a.id))
+        if s:
+            updated = False
+            # Sync status
+            if s.status == SessionStatus.EVALUATED:
+                if a.functional_status != InterviewStatus.completed:
+                    a.functional_status = InterviewStatus.completed
+                    updated = True
+            elif s.status == SessionStatus.IN_PROGRESS:
+                if a.functional_status != InterviewStatus.scheduled:
+                    a.functional_status = InterviewStatus.scheduled
+                    updated = True
+
+            # Sync score
+            if s.evaluation and isinstance(s.evaluation, dict):
+                score = s.evaluation.get("overallScore")
+                if score is not None:
+                    score = float(score)
+                    if a.functional_score != score:
+                        a.functional_score = score
+                        updated = True
+
+                # Sync report URL
+                if s.reportUrl and a.report_url != s.reportUrl:
+                    a.report_url = s.reportUrl
+                    updated = True
+
+                # Sync cheat probability based on proctoring logs
+                from app.models.ai_integration import ProctoringLog
+                p_logs = db.query(ProctoringLog).filter(ProctoringLog.sessionId == s.id).all()
+                critical_count = sum(1 for log in p_logs if log.severity in [Severity.CRITICAL, Severity.HIGH])
+                med_count = sum(1 for log in p_logs if log.severity == Severity.MEDIUM)
+
+                new_cheat = CheatProbability.low
+                if critical_count > 0:
+                    new_cheat = CheatProbability.high
+                elif med_count > 0:
+                    new_cheat = CheatProbability.medium
+
+                if a.cheat_probability != new_cheat:
+                    a.cheat_probability = new_cheat
+                    updated = True
+
+                # Sync attempted_at/completed_at
+                completed_at = s.completedAt or s.updatedAt
+                if completed_at and a.attempted_at != completed_at:
+                    a.attempted_at = completed_at
+                    updated = True
+
+            if updated:
+                db.add(a)
+
+    if applicants:
+        db.commit()
+
     return [
         {
             "id": str(a.id),

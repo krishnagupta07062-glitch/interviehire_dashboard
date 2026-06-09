@@ -2870,49 +2870,141 @@ function openReportDrawerForCandidate(candidateId) {
     `).join('');
   }
 
-  const vetting = getCandidateVettingDetails(candidateId, candidate.name);
-
+  // Clear/show loading state for vetting components
   const transcriptFlow = document.getElementById('report-transcript-flow');
   if (transcriptFlow) {
-    transcriptFlow.innerHTML = vetting.transcript.map(line => `
-      <div class="transcript-chat-line chat-speaker-${line.speaker.toLowerCase()}">
-        <span class="chat-speaker-badge">${line.speaker}:</span>
-        <span class="chat-text-bubble">${line.text}</span>
+    transcriptFlow.innerHTML = `
+      <div class="transcript-chat-line" style="justify-content: center; opacity: 0.7;">
+        <span class="chat-text-bubble">Loading AI vetting report transcript...</span>
       </div>
-    `).join('');
+    `;
   }
-
   const caveatsBody = document.getElementById('report-caveats-body');
   if (caveatsBody) {
-    const rubricRows = vetting.rubrics.map(r => `
-      <div class="rubric-row">
-        <span class="rubric-lbl">${r.label}</span>
-        <div class="rubric-bar-track"><div class="rubric-bar-fill indigo" style="width: ${r.score * 10}%"></div></div>
-        <span class="rubric-val">${r.score}/10</span>
-      </div>
-    `).join('');
-    const caveatTags = vetting.caveats.map(cav => `
-      <div class="caveat-tag ${cav.type}">
-        <span class="caveat-icon">${cav.type === 'warning' ? '⚠️' : '💡'}</span>
-        <span class="caveat-text">${cav.text}</span>
-      </div>
-    `).join('');
     caveatsBody.innerHTML = `
-      <div class="rubrics-section"><span class="section-sub-title">AI Vetting Scorecard</span>${rubricRows}</div>
-      <div class="caveats-section"><span class="section-sub-title">AI Caveats & Flags</span><div class="caveats-list-tags">${caveatTags}</div></div>
-      <div class="pros-cons-grid">
-        <div class="pro-col"><span class="section-sub-title pros">Pros</span><ul>${vetting.pros.map(p => `<li><span class="list-bullet pro">✓</span>${p}</li>`).join('')}</ul></div>
-        <div class="con-col"><span class="section-sub-title cons">Cons</span><ul>${vetting.cons.map(cn => `<li><span class="list-bullet con">✗</span>${cn}</li>`).join('')}</ul></div>
+      <div style="padding: 24px; text-align: center; opacity: 0.7;">
+        <span class="caveat-text">Retrieving latest proctoring logs & scores...</span>
       </div>
     `;
   }
 
+  function renderVetting(vettingData) {
+    // Render report link if present
+    const reportJobEl = document.getElementById('report-job');
+    if (reportJobEl) {
+      const rUrl = candidate.reportUrl || vettingData.reportUrl;
+      if (rUrl) {
+        let fullUrl = rUrl;
+        if (rUrl.startsWith('/')) {
+          fullUrl = `http://localhost:4000${rUrl}`;
+        }
+        reportJobEl.innerHTML = `${candidate.jobApplied} &bull; <a href="${fullUrl}" target="_blank" class="pdf-report-link" style="color: var(--color-gold); text-decoration: underline; font-weight: 500; cursor: pointer;">Download AI Report (PDF) 📄</a>`;
+      } else {
+        reportJobEl.textContent = candidate.jobApplied;
+      }
+    }
+
+    if (transcriptFlow) {
+      if (!vettingData.transcript || vettingData.transcript.length === 0) {
+        transcriptFlow.innerHTML = `
+          <div class="transcript-chat-line" style="justify-content: center; opacity: 0.5;">
+            <span class="chat-text-bubble">No interview transcript available yet.</span>
+          </div>
+        `;
+      } else {
+        transcriptFlow.innerHTML = vettingData.transcript.map(line => {
+          let speakerClass = line.speaker.toLowerCase();
+          if (speakerClass === 'ai interviewer') {
+            speakerClass = 'lina';
+          } else if (speakerClass === 'candidate') {
+            speakerClass = 'candidate';
+          } else {
+            speakerClass = 'lina'; // default
+          }
+          return `
+            <div class="transcript-chat-line chat-speaker-${speakerClass}">
+              <span class="chat-speaker-badge">${line.speaker}:</span>
+              <span class="chat-text-bubble">${line.text}</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    if (caveatsBody) {
+      const rubricRows = (vettingData.rubrics || []).map(r => `
+        <div class="rubric-row">
+          <span class="rubric-lbl">${r.label}</span>
+          <div class="rubric-bar-track"><div class="rubric-bar-fill indigo" style="width: ${r.score * 10}%"></div></div>
+          <span class="rubric-val">${r.score}/10</span>
+        </div>
+      `).join('');
+      const caveatTags = (vettingData.caveats || []).map(cav => `
+        <div class="caveat-tag ${cav.type}">
+          <span class="caveat-icon">${cav.type === 'warning' ? '⚠️' : '💡'}</span>
+          <span class="caveat-text">${cav.text}</span>
+        </div>
+      `).join('');
+      
+      const prosList = (vettingData.pros || []).map(p => `<li><span class="list-bullet pro">✓</span>${p}</li>`).join('');
+      const consList = (vettingData.cons || []).map(cn => `<li><span class="list-bullet con">✗</span>${cn}</li>`).join('');
+
+      caveatsBody.innerHTML = `
+        <div class="rubrics-section">
+          <span class="section-sub-title">AI Vetting Scorecard</span>
+          ${rubricRows || '<p class="type-caption" style="opacity:0.5; padding: 8px 0;">No scorecard rubrics available yet.</p>'}
+        </div>
+        <div class="caveats-section">
+          <span class="section-sub-title">AI Caveats & Flags</span>
+          <div class="caveats-list-tags">
+            ${caveatTags || '<span class="type-caption" style="opacity:0.5; padding: 8px 0;">No caveats/flags recorded.</span>'}
+          </div>
+        </div>
+        <div class="pros-cons-grid">
+          <div class="pro-col">
+            <span class="section-sub-title pros">Pros</span>
+            <ul>${prosList || '<li style="opacity:0.5;">No pros listed yet.</li>'}</ul>
+          </div>
+          <div class="con-col">
+            <span class="section-sub-title cons">Cons</span>
+            <ul>${consList || '<li style="opacity:0.5;">No cons listed yet.</li>'}</ul>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // Fetch live vetting details
+  apiFetch(`/api/jobs/applicants/${candidateId}/functional-vetting`)
+    .then(data => {
+      if (data) {
+        renderVetting(data);
+      } else {
+        throw new Error("Empty vetting response");
+      }
+    })
+    .catch(err => {
+      console.warn("Failed to fetch live vetting details, falling back to mock:", err);
+      const fallback = getCandidateVettingDetails(candidateId, candidate.name);
+      renderVetting(fallback);
+    });
+
   const actionsBody = document.getElementById('report-action-buttons');
   if (actionsBody) {
+    let extraButtons = '';
+    if (candidate.status === 'Functional') {
+      extraButtons += `
+        <a href="http://localhost:3000/interview?sessionId=${candidateId}" target="_blank" class="btn-stage-advance" style="background: var(--color-gold); color: black; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-weight: 600; padding: 12px 20px; border-radius: 8px; cursor: pointer; border: none; font-family: var(--font-sans); margin-left: 8px;">
+          Open Interview Portal 🔗
+        </a>
+      `;
+    }
+
     actionsBody.innerHTML = `
-      <div class="jd-card-actions inline">
+      <div class="jd-card-actions inline" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
         <button class="btn-stage-reject" data-candidate-id="${candidateId}">Reject</button>
-        <button class="btn-stage-advance" data-candidate-id="${candidateId}" data-next-stage="${candidate.status === 'Screening' ? 'Functional' : 'Hired'}">${candidate.status === 'Screening' ? 'Advance to Functional →' : 'Hire Candidate ✓'}</button>
+        <button class="btn-stage-advance" data-candidate-id="${candidateId}">${candidate.status === 'Screening' ? 'Advance to Functional →' : 'Hire Candidate ✓'}</button>
+        ${extraButtons}
       </div>
     `;
     actionsBody.querySelector('.btn-stage-reject')?.addEventListener('click', () => {
@@ -7780,7 +7872,12 @@ function renderJobDetailPanes(job) {
                     <td>${hasReport ? `<a href="#" class="report-link" data-cand-id="${c.id}">Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '—'}</td>
                     <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
                     <td>${c.attemptedAt || '—'}</td>
-                    <td><button class="${actionClass}" data-candidate-id="${c.id}">${c.interviewStatus === 'Slot Missed' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> ' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> '}${actionLabel}</button></td>
+                    <td>
+                      <div style="display:flex;gap:6px;align-items:center;">
+                        <button class="${actionClass}" data-candidate-id="${c.id}">${c.interviewStatus === 'Slot Missed' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> ' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> '}${actionLabel}</button>
+                        <button class="btn-stage-advance btn-tbl-advance" data-candidate-id="${c.id}" data-next-stage="Functional" style="padding:4px 8px;font-size:0.7rem;">Advance</button>
+                      </div>
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -8270,11 +8367,9 @@ async function updateCandidateStatus(candId, newStatus) {
   } else if (newStatus === 'Hired') {
     patchData.remarks = 'Hired';
   } else if (newStatus === 'Functional') {
-    patchData.functional_status = 'completed';
-    if (candidate.interviewScore === null || candidate.interviewScore === '—') {
-      patchData.functional_score = Math.floor(Math.random() * 31) + 60;
-    }
-    patchData.cheat_probability = 'low';
+    patchData.functional_status = 'scheduled';
+    patchData.functional_score = null;
+    patchData.cheat_probability = null;
     patchData.remarks = null;
   } else if (newStatus === 'Screening') {
     patchData.screening_status = 'completed';
@@ -8718,7 +8813,8 @@ async function loadStateFromBackend() {
           recruiterScreening: c.recruiter_screening,
           recruiterScreeningScore: c.recruiter_screening_score,
           resumeUrl: c.resume_url || null,
-          resumeAnalysed: c.resume_analysed || false
+          resumeAnalysed: c.resume_analysed || false,
+          reportUrl: c.report_url || null
         };
       });
     }

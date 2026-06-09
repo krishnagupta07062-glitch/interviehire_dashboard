@@ -1579,10 +1579,15 @@ def update_applicant(
     db: Session = Depends(get_db)
 ):
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    has_functional_update = 'functional_status' in data.model_dump(exclude_unset=True)
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(applicant, key, value)
     db.commit()
     db.refresh(applicant)
+
+    if has_functional_update and applicant.functional_status:
+        from app.utils.ai_sync import sync_applicant_to_ai
+        sync_applicant_to_ai(db, applicant)
 
     # Broadcast updates via WebSocket
     job = db.query(Job).filter(Job.id == applicant.job_id).first()
@@ -1616,3 +1621,15 @@ def get_applicant_resume_text(
     from app.utils.resume_parser import extract_text_from_file
     file_text = extract_text_from_file(applicant.resume_url)
     return {"text": file_text}
+
+
+@router.get("/applicants/{applicant_id}/functional-vetting")
+def get_functional_vetting(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    from app.utils.ai_sync import get_applicant_vetting
+    return get_applicant_vetting(db, str(applicant_id))
