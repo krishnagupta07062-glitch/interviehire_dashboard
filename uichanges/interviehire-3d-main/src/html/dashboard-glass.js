@@ -1,5 +1,12 @@
 export const html = `
-<!-- Background grid elements -->
+<!-- Background glass orbs -->
+    <div class="bg-glass-orbs">
+      <div class="orb orb-indigo"></div>
+      <div class="orb orb-gold"></div>
+      <div class="orb orb-pink"></div>
+    </div>
+
+    <!-- Background grid elements -->
     <div class="bg-grid"></div>
     <div class="bg-radial"></div>
 
@@ -90,12 +97,12 @@ export const html = `
           
           <!-- User Profile -->
           <div class="user-profile">
-            <div class="user-avatar" id="user-avatar">D</div>
+            <div class="user-avatar">D</div>
             <div class="user-info">
-              <div class="user-name" id="user-name">Devasri</div>
-              <div class="user-role" id="user-role">Org. Admin</div>
+              <div class="user-name">Devasri</div>
+              <div class="user-role">Org. Admin</div>
             </div>
-            <button class="btn-logout" id="btn-logout" aria-label="Logout">
+            <button class="btn-logout" aria-label="Logout">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>
@@ -105,7 +112,6 @@ export const html = `
           </div>
         </div>
       </aside>
-
 
       <!-- Main Dashboard Container -->
       <main class="main-content">
@@ -121,31 +127,6 @@ export const html = `
           </div>
           
           <div class="header-right">
-            <!-- Org Switcher (only visible for super_admin) -->
-            <div id="org-switcher-wrap" style="display:none; position:relative;">
-              <button id="org-switcher-btn" style="
-                display:flex; align-items:center; gap:7px;
-                background:rgba(212,175,55,0.08); border:1px solid rgba(212,175,55,0.25);
-                border-radius:8px; padding:7px 12px; color:#d4af37;
-                font-size:0.8rem; font-weight:700; cursor:pointer;
-                transition: background 0.2s ease, border-color 0.2s ease;
-                font-family: inherit; white-space:nowrap;
-              ">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                <span id="org-switcher-label">Select Org</span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-              <div id="org-switcher-dropdown" style="
-                display:none; position:absolute; top:calc(100% + 8px); right:0;
-                background:rgba(12,12,14,0.95); backdrop-filter:blur(20px);
-                border:1px solid rgba(212,175,55,0.2); border-radius:12px;
-                min-width:200px; padding:6px; z-index:1000;
-                box-shadow:0 20px 40px -10px rgba(0,0,0,0.7);
-              ">
-                <div id="org-switcher-list" style="display:flex; flex-direction:column; gap:2px;"></div>
-              </div>
-            </div>
-
             <!-- Search field -->
             <div class="search-box">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon">
@@ -986,36 +967,9 @@ export const html = `
         </div>
       </main>
 
-      <!-- Modal: Edit Job Name -->
-      <div class="modal-overlay" id="modal-edit-job" style="display: none;">
-        <div class="modal-box">
-          <div class="modal-header">
-            <h2 class="modal-title">Edit Job Details</h2>
-            <button class="modal-close-btn" id="modal-edit-job-close" aria-label="Close">×</button>
-          </div>
-          <div class="modal-body">
-            <div class="modal-field">
-              <label class="modal-label">Job Name <span class="modal-required">*</span></label>
-              <input type="text" id="modal-edit-job-name" class="modal-input" placeholder="Enter job name" />
-            </div>
-            <div class="modal-field">
-              <label class="modal-label">Job Description <span class="modal-optional">(optional)</span></label>
-              <textarea id="modal-edit-job-description" class="modal-input" placeholder="Enter job description" rows="4" style="resize: vertical; min-height: 100px; font-family: var(--font-sans); background: var(--color-bg-dark); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 4px; padding: 8px; width: 100%; box-sizing: border-box;"></textarea>
-            </div>
-            <div class="modal-field">
-              <label class="modal-label">Tags <span class="modal-optional">(optional)</span></label>
-              <div class="modal-tags-wrap">
-                <div class="modal-tags-list" id="modal-edit-tags-list"></div>
-                <input type="text" id="modal-edit-tags-input" class="modal-input" placeholder="Type and press Enter or comma" />
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="modal-save-btn" id="modal-edit-job-save">Save Changes</button>
-          </div>
-        </div>
-      </div>
-
+      <!-- ===================================== -->
+      <!-- SLIDE-OUT DRAWERS (FORM SECTIONS) -->
+      <!-- ===================================== -->
       <div class="drawer-overlay" id="drawer-backdrop"></div>
 
       <!-- Drawer: Job Creator -->

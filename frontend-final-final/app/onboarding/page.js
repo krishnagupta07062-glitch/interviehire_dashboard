@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 const STEPS = ['Organisation', 'Details', 'Done'];
@@ -18,6 +18,15 @@ export default function OnboardingPage() {
     location: '',
     description: '',
   });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <div className="onboard-page" style={{ background: '#0a0a0a' }} />;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();

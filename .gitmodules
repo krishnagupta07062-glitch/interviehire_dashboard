@@ -1,0 +1,3 @@
+[submodule "ai_components"]
+	path = ai_components
+	url = https://github.com/krrish-narang/IntervieHire

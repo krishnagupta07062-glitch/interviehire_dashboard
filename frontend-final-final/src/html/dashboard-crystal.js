@@ -1370,7 +1370,7 @@ export const html = `
       <div class="modal-overlay" id="modal-edit-job" style="display: none;">
         <div class="modal-box">
           <div class="modal-header">
-            <h2 class="modal-title">Edit Job Name</h2>
+            <h2 class="modal-title">Edit Job Details</h2>
             <button class="modal-close-btn" id="modal-edit-job-close" aria-label="Close">×</button>
           </div>
           <div class="modal-body">
@@ -1379,8 +1379,8 @@ export const html = `
               <input type="text" id="modal-edit-job-name" class="modal-input" placeholder="Enter job name" />
             </div>
             <div class="modal-field">
-              <label class="modal-label">Job Id <span class="modal-optional">(optional)</span></label>
-              <input type="text" id="modal-edit-job-id" class="modal-input" placeholder="e.g. 49298af015c842336b57a62a1" />
+              <label class="modal-label">Job Description <span class="modal-optional">(optional)</span></label>
+              <textarea id="modal-edit-job-description" class="modal-input" placeholder="Enter job description" rows="4" style="resize: vertical; min-height: 100px; font-family: var(--font-sans); background: var(--color-bg-dark); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 4px; padding: 8px; width: 100%; box-sizing: border-box;"></textarea>
             </div>
             <div class="modal-field">
               <label class="modal-label">Tags <span class="modal-optional">(optional)</span></label>

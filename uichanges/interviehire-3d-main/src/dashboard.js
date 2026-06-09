@@ -6,12 +6,7 @@ if (typeof window !== 'undefined') {
   window.THREE = THREE_import;
 }
 
-let nextRouter = null;
-
-export function initDashboardPage(router) {
-  if (router) {
-    nextRouter = router;
-  }
+export function initDashboardPage() {
   const controller = new AbortController();
   const { signal } = controller;
 
@@ -162,7 +157,6 @@ const soundEngine = new SoundEngine();
 // STATE STORE
 // ==========================================
 const AppState = {
-  user: null,
   activeTab: 'jobs',
   activeSubtab: '',
   activeJobId: null,
@@ -1291,10 +1285,7 @@ function renderJobCards() {
       </div>
     `;
 
-    card.addEventListener('click', (e) => {
-      if (e.target.closest('.btn-job-kebab') || e.target.closest('.job-kebab-dropdown')) {
-        return;
-      }
+    card.addEventListener('click', () => {
       navigateToJobDetail(jobId);
     });
 
@@ -1630,7 +1621,7 @@ function renderTeamTable() {
           <div class="user-cell">
             <div class="user-avatar-mini" style="background-color: var(--color-gold-dim); border-color: var(--color-gold); color: var(--color-gold-light);">${member.name.charAt(0)}</div>
             <div class="user-details">
-              <span style="font-weight: 600;">${member.name} ${member.email === AppState.user?.email ? '(me)' : ''}</span>
+              <span style="font-weight: 600;">${member.name} ${member.name === 'Devasri' ? '(me)' : ''}</span>
               <span class="user-email-mini">${member.email}</span>
             </div>
           </div>
@@ -1639,7 +1630,7 @@ function renderTeamTable() {
     }
     if (visible.includes('designation')) cellsHtml += `<td>${member.designation}</td>`;
     if (visible.includes('usertype')) {
-      if (member.email === AppState.user?.email) {
+      if (member.name === 'Devasri') {
         cellsHtml += `
           <td>
             <span class="badge-role">
@@ -1662,7 +1653,7 @@ function renderTeamTable() {
     }
     if (visible.includes('registeredOn')) cellsHtml += `<td class="cell-mono">${member.registeredOn}</td>`;
     if (visible.includes('status')) {
-      if (member.email === AppState.user?.email) {
+      if (member.name === 'Devasri') {
         cellsHtml += `
           <td>
             <span class="status-badge published">
@@ -1686,7 +1677,7 @@ function renderTeamTable() {
     if (visible.includes('actions')) {
       cellsHtml += `
         <td>
-          <button class="table-btn-action btn-revoke-member" data-email="${member.email}" style="color: var(--color-orange);" title="Deactivate/Revoke Member" ${member.email === AppState.user?.email ? 'disabled style="opacity: 0.2; cursor: not-allowed;"' : ''}>
+          <button class="table-btn-action btn-revoke-member" data-email="${member.email}" style="color: var(--color-orange);" title="Deactivate/Revoke Member" ${member.name === 'Devasri' ? 'disabled style="opacity: 0.2; cursor: not-allowed;"' : ''}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
           </button>
         </td>
@@ -1725,25 +1716,14 @@ function renderTeamTable() {
   });
 
   tbody.querySelectorAll('.btn-revoke-member').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const email = btn.getAttribute('data-email');
       const member = AppState.team.find(m => m.email === email);
       if (member) {
-        try {
-          const response = await apiFetch(`/api/team/${member.id}`, {
-            method: 'DELETE'
-          });
-          if (response) {
-            await loadStateFromBackend();
-            soundEngine.playChime([392, 293.66], 0.15, 0.08);
-            showPremiumToast(`${member.name} has been revoked from the team access list.`, 'success');
-          } else {
-            throw new Error("Failed to revoke member");
-          }
-        } catch (e) {
-          console.error("Failed to revoke member:", e);
-          showPremiumToast(`Error: ${e.message}`, "error");
-        }
+        AppState.team = AppState.team.filter(m => m.email !== email);
+        soundEngine.playChime([392, 293.66], 0.15, 0.08);
+        showPremiumToast(`${member.name} has been revoked from the team access list.`, 'success');
+        renderTeamTable();
       }
     });
   });
@@ -1827,7 +1807,7 @@ function updateSummaryMetrics() {
   const filtered = filterCandidatesByDateRange(AppState.candidates);
 
   const totalApplicants = filtered.length;
-  const resumeCount = filtered.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled')).length;
+  const resumeCount = filtered.filter(c => c.status === 'Resume').length;
   const screeningCount = filtered.filter(c => c.status === 'Screening').length;
   const functionalCount = filtered.filter(c => c.status === 'Functional').length;
 
@@ -1880,137 +1860,11 @@ function updateSummaryMetrics() {
 // VIEW SWITCHER ROUTING
 // ==========================================
 // ==========================================
-// PATH-BASED URL ROUTER HELPERS
-// ==========================================
-function getRouteFromPathname() {
-  if (typeof window === 'undefined') return { tab: 'jobs' };
-  const path = window.location.pathname;
-  const segments = path.split('/').filter(Boolean);
-  const prefix = segments[0] || 'dashboard'; // e.g. 'dashboard', 'dashboard-crystal', 'dashboard-glass'
-  const subSegments = segments.slice(1);
-  
-  if (subSegments.length === 0) {
-    return { tab: 'jobs' };
-  }
-  
-  const first = subSegments[0];
-  
-  if (first === 'jobs') {
-    if (subSegments.length === 1) {
-      return { tab: 'jobs' };
-    }
-    if (subSegments[1] === 'create') {
-      if (subSegments[2] === 'aria') {
-        return { tab: 'aria-chat' };
-      }
-      return { tab: 'create-job' };
-    }
-    
-    const segment = subSegments[1];
-    const jobId = segment.includes('--') ? segment.split('--').pop() : segment;
-    if (subSegments[2] === 'flow') {
-      return { tab: 'job-flow', jobId };
-    }
-    if (subSegments[2] === 'sourcing') {
-      return { tab: 'sourcing', jobId };
-    }
-    return { tab: 'job-detail', jobId };
-  }
-  
-  if (first === 'analytics') return { tab: 'analytics' };
-  if (first === 'swarm') return { tab: 'swarm' };
-  if (first === 'team') return { tab: 'team' };
-  if (first === 'career') return { tab: 'career' };
-  if (first === 'settings') return { tab: 'settings' };
-  
-  return { tab: 'jobs' };
-}
-
-function updateURLRoute(tabId, jobId = null) {
-  try {
-    if (typeof window === 'undefined') return;
-    const path = window.location.pathname;
-    const segments = path.split('/').filter(Boolean);
-    const prefix = segments[0] || 'dashboard';
-    
-    const slugify = (text) => {
-      if (!text) return 'job';
-      return text.toString().toLowerCase().trim()
-        .replace(/\s+/g, '-')
-        .replace(/[^\w\-]+/g, '')
-        .replace(/\-\-+/g, '-')
-        .replace(/^-+/, '')
-        .replace(/-+$/, '');
-    };
-
-    let routeSegment = jobId;
-    if (jobId) {
-      const job = AppState.jobs.find(j => String(j.id) === String(jobId));
-      if (job) {
-        const slug = slugify(job.cardName || job.roleName);
-        routeSegment = `${slug}--${jobId}`;
-      }
-    }
-
-    let newPath = `/${prefix}`;
-    if (tabId === 'jobs') {
-      newPath = `/${prefix}/jobs`;
-    } else if (tabId === 'create-job') {
-      newPath = `/${prefix}/jobs/create`;
-    } else if (tabId === 'aria-chat') {
-      newPath = `/${prefix}/jobs/create/aria`;
-    } else if (tabId === 'job-detail' && jobId) {
-      newPath = `/${prefix}/jobs/${routeSegment}`;
-    } else if (tabId === 'job-flow' && jobId) {
-      newPath = `/${prefix}/jobs/${routeSegment}/flow`;
-    } else if (tabId === 'sourcing' && jobId) {
-      newPath = `/${prefix}/jobs/${routeSegment}/sourcing`;
-    } else if (tabId === 'analytics') {
-      newPath = `/${prefix}/analytics`;
-    } else if (tabId === 'swarm') {
-      newPath = `/${prefix}/swarm`;
-    } else if (tabId === 'team') {
-      newPath = `/${prefix}/team`;
-    } else if (tabId === 'career') {
-      newPath = `/${prefix}/career`;
-    } else if (tabId === 'settings') {
-      newPath = `/${prefix}/settings`;
-    }
-    
-    if (window.location.pathname !== newPath) {
-      window.history.pushState(null, '', newPath);
-    }
-  } catch (e) {
-    console.error("Failed to update URL route:", e);
-  }
-}
-
-function handleInitialRouting() {
-  const route = getRouteFromPathname();
-  if (route.tab === 'job-detail' && route.jobId) {
-    navigateToJobDetail(route.jobId);
-  } else if (route.tab === 'job-flow' && route.jobId) {
-    openJobFlowView(route.jobId);
-  } else if (route.tab === 'sourcing' && route.jobId) {
-    navigateToSourcing(route.jobId);
-  } else if (route.tab === 'create-job') {
-    navigateToCreateJob();
-  } else if (route.tab === 'aria-chat') {
-    navigateToAriaChat();
-  } else {
-    navigateToTab(route.tab || 'jobs');
-  }
-}
-window.handleInitialRouting = handleInitialRouting;
-
-// ==========================================
 // VIEW SWITCHER ROUTING
 // ==========================================
 function navigateToTab(tabId) {
   AppState.activeTab = tabId;
   AppState.activeSubtab = '';
-
-  updateURLRoute(tabId);
 
   // Update Sidebar Active state
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -2040,11 +1894,7 @@ function navigateToTab(tabId) {
 
   if (tabId === 'jobs') {
     breadcrumb.textContent = 'Jobs';
-    const hour = new Date().getHours();
-    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    const emoji = hour < 12 ? '🌤️' : hour < 17 ? '☀️' : '🌙';
-    const firstName = (AppState.user?.name || AppState.user?.email || 'there').split(' ')[0];
-    mainTitle.textContent = `${greeting}, ${firstName} ${emoji}`;
+    mainTitle.textContent = 'Good morning, Devasri 🌤️';
     subText.textContent = 'A squad of AI agents working for you';
     actionBtnText.textContent = 'New Job';
     document.getElementById('view-jobs').classList.add('active-view');
@@ -2092,8 +1942,6 @@ function navigateToTab(tabId) {
     actionBtn.style.display = 'none'; // No primary CTA for career config page
     document.getElementById('view-career').classList.add('active-view');
     soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.15);
-  } else if (tabId === 'settings') {
-    navigateToSubtab('settings-general');
   }
 }
 
@@ -2104,7 +1952,6 @@ function navigateToTab(tabId) {
 function navigateToCreateJob() {
   AppState.activeTab = 'create-job';
   AppState.activeSubtab = '';
-  updateURLRoute('create-job');
 
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === 'jobs');
@@ -2131,13 +1978,6 @@ function navigateToCreateJob() {
   if (fileInput) fileInput.value = '';
   createJobUploadedFileName = null;
   createJobUploadedText = null;
-  createJobUploadedFile = null;
-
-  const btnContinue = document.getElementById('btn-create-job-continue');
-  if (btnContinue) {
-    btnContinue.disabled = false;
-    btnContinue.innerHTML = `Continue <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
-  }
 
   soundEngine.playChime([392, 523.25], 0.12, 0.1);
 }
@@ -2147,7 +1987,6 @@ let ariaChatHistory = [];
 function navigateToAriaChat() {
   AppState.activeTab = 'aria-chat';
   AppState.activeSubtab = '';
-  updateURLRoute('aria-chat');
 
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === 'jobs');
@@ -2239,32 +2078,33 @@ If you need more info, respond ONLY with this JSON (no extra text):
     const parsed = JSON.parse(sanitizeJSONResponse(response));
 
     if (parsed.ready) {
+      const newJob = {
+        id: generateJobId(),
+        roleName: parsed.roleName,
+        cardName: parsed.cardName || parsed.roleName,
+        created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+        status: 'published',
+        customJobId: '-',
+        experienceBand: parsed.experienceBand || 'Upto 2 Years',
+        createdBy: 'Devasri',
+        description: parsed.description,
+        questions: [],
+        pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }
+      };
+      AppState.jobs.unshift(newJob);
+      saveStateToLocalStorage();
+      appendAriaMessage(`Great! I've created "${parsed.roleName}". Now generating your screening criteria, interview questions, and pipeline — hang tight...`, 'aria');
+      soundEngine.playChime([329.63, 392, 523.25], 0.15, 0.08);
+
       try {
-        const createdJob = await apiFetch('/api/jobs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: parsed.cardName || parsed.roleName,
-            role_name: parsed.roleName,
-            experience_band: parsed.experienceBand || 'Upto 2 Years',
-            status: 'draft',
-            description: parsed.description || ''
-          })
-        });
-        if (createdJob) {
-          await loadStateFromBackend();
-          appendAriaMessage(`Perfect! I've created the "${parsed.roleName}" job posting. Taking you to the job flow now...`, 'aria');
-          soundEngine.playChime([329.63, 392, 523.25, 659.25], 0.2, 0.08);
-          setTimeout(() => openJobFlowView(String(createdJob.id), false), 1400);
-        } else {
-          throw new Error("Failed to create job");
-        }
-      } catch (e) {
-        console.error(e);
-        appendAriaMessage(`Failed to create the job: ${e.message}`, 'aria');
-        input.disabled = false;
-        sendBtn.disabled = false;
-        input.focus();
+        await enrichJobWithAI(newJob, parsed.description);
+        appendAriaMessage(`Done! Your full interview pipeline is ready. Taking you there now...`, 'aria');
+        soundEngine.playChime([523.25, 659.25, 783.99], 0.2, 0.08);
+        setTimeout(() => openJobFlowView(newJob.id, true), 1200);
+      } catch (enrichErr) {
+        console.error('Enrichment failed:', enrichErr);
+        appendAriaMessage(`Job created, but I couldn't generate the full pipeline. You can configure it manually.`, 'aria');
+        setTimeout(() => openJobFlowView(newJob.id, true), 1200);
       }
     } else {
       appendAriaMessage(parsed.message, 'aria');
@@ -2429,7 +2269,7 @@ function recalculateJobPipelines() {
     const jobCandidates = dateFiltered.filter(c => c.jobApplied === job.roleName || c.jobApplied === job.cardName);
 
     job.pipeline.total = jobCandidates.length;
-    job.pipeline.resume = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled')).length;
+    job.pipeline.resume = jobCandidates.filter(c => c.status === 'Resume').length;
     job.pipeline.screening = jobCandidates.filter(c => c.status === 'Screening').length;
     job.pipeline.functional = jobCandidates.filter(c => c.status === 'Functional').length;
   });
@@ -2852,45 +2692,86 @@ function openReportDrawerForCandidate(candidateId) {
   const initials = candidate.name.split(' ').map(n => n[0]).join('');
   document.getElementById('report-avatar').textContent = initials;
 
-  const numericScore = parseFloat(candidate.score) || 80;
-  const rubrics = [
-    { label: 'Coding Proficiency', score: (numericScore / 10).toFixed(1) },
-    { label: 'System Design', score: ((numericScore - 4 - Math.random() * 4) / 10).toFixed(1) },
-    { label: 'Communication', score: ((numericScore + 2 - Math.random() * 4) / 10).toFixed(1) },
-    { label: 'Problem Solving', score: ((numericScore - 2 - Math.random() * 3) / 10).toFixed(1) },
-  ];
+  const aiResult = resumeAnalysisCache[candidateId];
+  const numericScore = aiResult ? aiResult.matchScore : (parseFloat(candidate.score) || 0);
+
+  const rubrics = aiResult && aiResult.scorecard
+    ? [
+        { label: 'Technical Skills', score: aiResult.scorecard.technical?.toFixed(1) || '0.0' },
+        { label: 'Experience', score: aiResult.scorecard.experience?.toFixed(1) || '0.0' },
+        { label: 'Communication', score: aiResult.scorecard.communication?.toFixed(1) || '0.0' },
+        { label: 'Culture Fit', score: aiResult.scorecard.cultureFit?.toFixed(1) || '0.0' },
+      ]
+    : [
+        { label: 'Technical Skills', score: '—' },
+        { label: 'Experience', score: '—' },
+        { label: 'Communication', score: '—' },
+        { label: 'Culture Fit', score: '—' },
+      ];
 
   const rubricListEl = document.getElementById('report-rubric-list');
   if (rubricListEl) {
-    rubricListEl.innerHTML = rubrics.map(r => `
-      <div class="rubric-item">
-        <div class="rubric-meta"><span>${r.label}</span><strong class="val">${r.score} / 10</strong></div>
-        <div class="bar-outer"><div class="bar-inner" style="width: ${r.score * 10}%;"></div></div>
-      </div>
-    `).join('');
+    rubricListEl.innerHTML = rubrics.map(r => {
+      const val = parseFloat(r.score) || 0;
+      return `
+        <div class="rubric-item">
+          <div class="rubric-meta"><span>${r.label}</span><strong class="val">${r.score}${r.score !== '—' ? ' / 10' : ''}</strong></div>
+          <div class="bar-outer"><div class="bar-inner" style="width: ${val * 10}%;"></div></div>
+        </div>
+      `;
+    }).join('');
   }
 
   const vetting = getCandidateVettingDetails(candidateId, candidate.name);
 
   const transcriptFlow = document.getElementById('report-transcript-flow');
   if (transcriptFlow) {
-    transcriptFlow.innerHTML = vetting.transcript.map(line => `
-      <div class="transcript-chat-line chat-speaker-${line.speaker.toLowerCase()}">
-        <span class="chat-speaker-badge">${line.speaker}:</span>
-        <span class="chat-text-bubble">${line.text}</span>
-      </div>
-    `).join('');
+    if (aiResult && aiResult.summary) {
+      transcriptFlow.innerHTML = `
+        <div class="ra-ai-summary-block">
+          <div class="ra-ai-summary-header">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            AI Resume Analysis
+          </div>
+          <p class="ra-ai-summary-text">${aiResult.summary}</p>
+          ${aiResult.recommendation ? `<div class="ra-ai-rec-line"><strong>Recommendation:</strong> <span class="ra-rec-badge ${aiResult.recommendation === 'Advance' ? 'high' : aiResult.recommendation === 'Hold' ? 'medium' : 'low'}">${aiResult.recommendation}</span> ${aiResult.recommendationReason || ''}</div>` : ''}
+          ${aiResult.experienceYears ? `<div class="ra-ai-detail-line"><strong>Experience:</strong> ${aiResult.experienceYears}</div>` : ''}
+          ${aiResult.skills ? `
+            <div class="ra-skills-grid">
+              ${aiResult.skills.matched?.length ? `<div class="ra-skill-group matched"><span class="ra-skill-label">Matched Skills</span><div class="ra-skill-tags">${aiResult.skills.matched.map(s => `<span class="ra-skill-tag matched">${s}</span>`).join('')}</div></div>` : ''}
+              ${aiResult.skills.missing?.length ? `<div class="ra-skill-group missing"><span class="ra-skill-label">Missing Skills</span><div class="ra-skill-tags">${aiResult.skills.missing.map(s => `<span class="ra-skill-tag missing">${s}</span>`).join('')}</div></div>` : ''}
+              ${aiResult.skills.detected?.length ? `<div class="ra-skill-group detected"><span class="ra-skill-label">Other Skills</span><div class="ra-skill-tags">${aiResult.skills.detected.filter(s => !aiResult.skills.matched?.includes(s)).slice(0, 8).map(s => `<span class="ra-skill-tag">${s}</span>`).join('')}</div></div>` : ''}
+            </div>
+          ` : ''}
+        </div>
+      ` + vetting.transcript.map(line => `
+        <div class="transcript-chat-line chat-speaker-${line.speaker.toLowerCase()}">
+          <span class="chat-speaker-badge">${line.speaker}:</span>
+          <span class="chat-text-bubble">${line.text}</span>
+        </div>
+      `).join('');
+    } else {
+      transcriptFlow.innerHTML = vetting.transcript.map(line => `
+        <div class="transcript-chat-line chat-speaker-${line.speaker.toLowerCase()}">
+          <span class="chat-speaker-badge">${line.speaker}:</span>
+          <span class="chat-text-bubble">${line.text}</span>
+        </div>
+      `).join('');
+    }
   }
 
   const caveatsBody = document.getElementById('report-caveats-body');
   if (caveatsBody) {
-    const rubricRows = vetting.rubrics.map(r => `
-      <div class="rubric-row">
-        <span class="rubric-lbl">${r.label}</span>
-        <div class="rubric-bar-track"><div class="rubric-bar-fill indigo" style="width: ${r.score * 10}%"></div></div>
-        <span class="rubric-val">${r.score}/10</span>
-      </div>
-    `).join('');
+    const rubricRows = (aiResult && aiResult.scorecard ? rubrics : vetting.rubrics).map(r => {
+      const val = parseFloat(r.score) || 0;
+      return `
+        <div class="rubric-row">
+          <span class="rubric-lbl">${r.label}</span>
+          <div class="rubric-bar-track"><div class="rubric-bar-fill indigo" style="width: ${val * 10}%"></div></div>
+          <span class="rubric-val">${r.score !== '—' ? r.score + '/10' : '—'}</span>
+        </div>
+      `;
+    }).join('');
     const caveatTags = vetting.caveats.map(cav => `
       <div class="caveat-tag ${cav.type}">
         <span class="caveat-icon">${cav.type === 'warning' ? '⚠️' : '💡'}</span>
@@ -2961,7 +2842,6 @@ function navigateToJobDetail(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'job-detail';
-  updateURLRoute('job-detail', jobId);
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -3042,7 +2922,6 @@ function openJobFlowView(jobId, showAddCandidates = false) {
 
   AppState.activeTab = 'job-flow';
   AppState.activeJobId = jobId;
-  updateURLRoute('job-flow', jobId);
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -3069,38 +2948,6 @@ function openJobFlowView(jobId, showAddCandidates = false) {
   document.getElementById('header-sub-text').textContent = 'Pipeline Configuration';
   document.getElementById('header-action-btn').style.display = 'none';
 
-  // Publish Job Button binding
-  const publishBtn = document.getElementById('btn-publish-job');
-  if (publishBtn) {
-    if (job.status === 'draft') {
-      publishBtn.style.display = 'inline-flex';
-      const newPublishBtn = publishBtn.cloneNode(true);
-      publishBtn.parentNode.replaceChild(newPublishBtn, publishBtn);
-      newPublishBtn.addEventListener('click', async () => {
-        try {
-          const updated = await apiFetch(`/api/jobs/${jobId}/settings`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'published' })
-          });
-          if (updated) {
-            await loadStateFromBackend();
-            showPremiumToast("Job published successfully!", "success");
-            soundEngine.playChime([261.63, 329.63, 392, 523.25], 0.25, 0.08);
-            navigateToSourcing(jobId);
-          } else {
-            throw new Error("Failed to publish job");
-          }
-        } catch (err) {
-          console.error("Publishing job failed:", err);
-          showPremiumToast(`Error: ${err.message}`, "error");
-        }
-      });
-    } else {
-      publishBtn.style.display = 'none';
-    }
-  }
-
   renderJobFlowPipeline(job);
   renderJobFlowConfig(job, 'careerPage');
 
@@ -3108,10 +2955,10 @@ function openJobFlowView(jobId, showAddCandidates = false) {
   const existingBanner = document.getElementById('jf-add-candidates-banner');
   if (existingBanner) existingBanner.remove();
 
-  if (false && showAddCandidates && flowView) {
+  if (showAddCandidates) {
     const banner = document.createElement('div');
     banner.id = 'jf-add-candidates-banner';
-    banner.className = 'jf-candidates-banner';
+    banner.className = 'jf-candidates-banner card-glass';
     banner.innerHTML = `
       <div class="jf-banner-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>
@@ -3148,17 +2995,8 @@ function renderJobFlowPipeline(job) {
   const panel = document.getElementById('jf-pipeline-panel');
   if (!panel) return;
 
-  const cfg = job.pipelineConfig || {};
-  const careerPageCfg = cfg.careerPage || { enabled: true, listed: false };
-  const resumeAnalysisCfg = cfg.resumeAnalysis || { enabled: true };
-  const recruiterScreeningCfg = cfg.recruiterScreening || { enabled: true };
-  const functionalInterviewCfg = cfg.functionalInterview || { enabled: true };
-
-  const criteria = job.resumeCriteria || {};
-  const mustHave = criteria.mustHave || [];
-  const redFlags = criteria.redFlags || [];
-  const goodToHave = criteria.goodToHave || [];
-
+  const cfg = job.pipelineConfig;
+  const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [] };
   const questionCount = job.questions ? job.questions.length : 0;
   const totalDuration = questionCount * 3;
 
@@ -3166,31 +3004,31 @@ function renderJobFlowPipeline(job) {
     {
       key: 'careerPage',
       name: 'Career Page',
-      enabled: !!careerPageCfg.enabled,
-      detail: careerPageCfg.listed ? '<span class="jf-stage-badge active">Job Listed</span>' : '',
+      enabled: cfg.careerPage.enabled,
+      detail: cfg.careerPage.listed ? '<span class="jf-stage-badge active">Job Listed</span>' : '',
       subtext: job.cardName || 'Position Not Specified',
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
     },
     {
       key: 'resumeAnalysis',
       name: 'Resume Analysis',
-      enabled: !!resumeAnalysisCfg.enabled,
+      enabled: cfg.resumeAnalysis.enabled,
       detail: '',
-      subtext: mustHave.length ? `${mustHave.length} Must have · ${redFlags.length} Red flags · ${goodToHave.length} Good to have` : 'No parameters added',
+      subtext: criteria.mustHave.length ? `${criteria.mustHave.length} Must have · ${criteria.redFlags.length} Red flags · ${criteria.goodToHave.length} Good to have` : 'No parameters added',
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
     },
     {
       key: 'recruiterScreening',
       name: 'Recruiter Screening',
-      enabled: !!recruiterScreeningCfg.enabled,
+      enabled: cfg.recruiterScreening.enabled,
       detail: '',
-      subtext: job.screeningParams ? `${job.screeningParams.reduce((a, c) => a + (c.params ? c.params.length : 0), 0)} Parameters` : 'No parameters added',
+      subtext: job.screeningParams ? `${job.screeningParams.reduce((a, c) => a + c.params.length, 0)} Parameters` : 'No parameters added',
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>'
     },
     {
       key: 'functionalInterview',
       name: 'Functional Interview',
-      enabled: !!functionalInterviewCfg.enabled,
+      enabled: cfg.functionalInterview.enabled,
       detail: '',
       subtext: questionCount > 0 ? `${questionCount} Questions · ${totalDuration} Minutes` : 'No questions added',
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
@@ -3342,7 +3180,7 @@ function renderCareerPageConfig(job, panel) {
 
   const editBtn = document.getElementById('btn-cp-edit');
   if (editBtn) {
-    editBtn.addEventListener('click', async () => {
+    editBtn.addEventListener('click', () => {
       if (isEditing) {
         const newTitle = document.getElementById('cp-edit-title')?.value.trim();
         const newRole = document.getElementById('cp-edit-role')?.value.trim();
@@ -3357,24 +3195,6 @@ function renderCareerPageConfig(job, panel) {
           if (input.value.trim()) editedFields.push(input.value.trim());
         });
         if (editedFields.length) job.applicationFields = editedFields;
-
-        // Persist to backend
-        try {
-          await apiFetch(`/api/jobs/${job.id}/settings`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: job.cardName,
-              role_name: job.roleName,
-              experience_band: job.experienceBand,
-              description: job.description
-            })
-          });
-        } catch (e) {
-          console.error('Failed to save job details to backend:', e);
-        }
-
-
         saveStateToLocalStorage();
         showPremiumToast('Job details saved.', 'success');
         panel.dataset.cpEditing = 'false';
@@ -3412,14 +3232,8 @@ function renderCareerPageConfig(job, panel) {
   }
 }
 
-
-
 function renderResumeAnalysisConfig(job, panel) {
-  const criteria = job.resumeCriteria || {};
-  const mustHave = criteria.mustHave || [];
-  const redFlags = criteria.redFlags || [];
-  const goodToHave = criteria.goodToHave || [];
-  const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
+  const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
 
   panel.innerHTML = `
     <div class="jf-config-header">
@@ -3443,7 +3257,7 @@ function renderResumeAnalysisConfig(job, panel) {
           <p class="ra-criteria-group-desc">Candidates meeting these criteria will be shortlisted; others waitlisted for review</p>
         </div>
       </div>
-      <div class="ra-criteria-items">${mustHave.map((item, i) => `<div class="ra-criteria-item must-have"><span class="ra-criteria-num must-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
+      <div class="ra-criteria-items">${criteria.mustHave.map((item, i) => `<div class="ra-criteria-item must-have"><span class="ra-criteria-num must-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
     </div>
 
     <div class="ra-criteria-divider"><span class="ra-criteria-divider-text">AND</span></div>
@@ -3456,7 +3270,7 @@ function renderResumeAnalysisConfig(job, panel) {
           <p class="ra-criteria-group-desc">Candidates with no red flags will be shortlisted; others waitlisted for review</p>
         </div>
       </div>
-      <div class="ra-criteria-items">${redFlags.map((item, i) => `<div class="ra-criteria-item red-flags"><span class="ra-criteria-num red-flags">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
+      <div class="ra-criteria-items">${criteria.redFlags.map((item, i) => `<div class="ra-criteria-item red-flags"><span class="ra-criteria-num red-flags">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
     </div>
 
     <div class="ra-criteria-divider"><span class="ra-criteria-divider-text">AND</span></div>
@@ -3469,127 +3283,15 @@ function renderResumeAnalysisConfig(job, panel) {
           <p class="ra-criteria-group-desc">Candidates meeting the threshold will be shortlisted; others waitlisted for review.</p>
         </div>
       </div>
-      <div class="ra-criteria-min-match">Minimum match: ${goodToHaveMinMatch} out of ${goodToHave.length} criteria</div>
-      <div class="ra-criteria-items">${goodToHave.map((item, i) => `<div class="ra-criteria-item good-to-have"><span class="ra-criteria-num good-to-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
+      <div class="ra-criteria-min-match">Minimum match: ${criteria.goodToHaveMinMatch} out of ${criteria.goodToHave.length} criteria</div>
+      <div class="ra-criteria-items">${criteria.goodToHave.map((item, i) => `<div class="ra-criteria-item good-to-have"><span class="ra-criteria-num good-to-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
     </div>
   `;
-
-  const editBtn = document.getElementById('jf-btn-edit-resume');
-  if (editBtn) {
-    editBtn.addEventListener('click', () => {
-      toggleJobFlowResumeCriteriaEdit(job);
-    });
-  }
-}
-
-function toggleJobFlowResumeCriteriaEdit(job) {
-  const panel = document.getElementById('jf-config-panel');
-  if (!panel) return;
-
-  const isEditing = panel.classList.contains('editing');
-  const editBtn = document.getElementById('jf-btn-edit-resume');
-
-  if (isEditing) {
-    // Save mode
-    panel.classList.remove('editing');
-    const criteria = { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
-    panel.querySelectorAll('.ra-criteria-group.must-have .ra-criteria-edit-input').forEach(input => {
-      if (input.value.trim()) criteria.mustHave.push(input.value.trim());
-    });
-    panel.querySelectorAll('.ra-criteria-group.red-flags .ra-criteria-edit-input').forEach(input => {
-      if (input.value.trim()) criteria.redFlags.push(input.value.trim());
-    });
-    panel.querySelectorAll('.ra-criteria-group.good-to-have .ra-criteria-edit-input').forEach(input => {
-      if (input.value.trim()) criteria.goodToHave.push(input.value.trim());
-    });
-    const minMatch = panel.querySelector('.ra-min-match-input');
-    if (minMatch) criteria.goodToHaveMinMatch = parseInt(minMatch.value) || 1;
-
-    job.resumeCriteria = criteria;
-    saveStateToLocalStorage(job);
-    showPremiumToast('Resume criteria saved.', 'success');
-
-    // Re-render Job Flow
-    renderJobFlowPipeline(job);
-    renderJobFlowConfig(job, 'resumeAnalysis');
-    return;
-  }
-
-  // Enter edit mode
-  panel.classList.add('editing');
-  const criteria = job.resumeCriteria || {};
-  const mustHave = criteria.mustHave || [];
-  const redFlags = criteria.redFlags || [];
-  const goodToHave = criteria.goodToHave || [];
-  const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
-  const groupsData = { mustHave, redFlags, goodToHave };
-
-  if (editBtn) {
-    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save';
-  }
-
-  // Transform criteria items into editable inputs
-  panel.querySelectorAll('.ra-criteria-items').forEach(itemsContainer => {
-    const group = itemsContainer.closest('.ra-criteria-group');
-    const groupType = group.classList.contains('must-have') ? 'mustHave' : group.classList.contains('red-flags') ? 'redFlags' : 'goodToHave';
-    const items = groupsData[groupType] || [];
-
-    itemsContainer.innerHTML = items.map((item, i) => `
-      <div class="ra-criteria-item-edit">
-        <span class="ra-criteria-num ${group.classList[1]}">${i + 1}</span>
-        <input type="text" class="ra-criteria-edit-input" value="${item}" />
-        <button class="btn-ra-remove-criteria" data-group="${groupType}" data-idx="${i}">
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-    `).join('') + `
-      <button class="btn-ra-add-criteria" data-group="${groupType}">+ Add Criterion</button>
-    `;
-
-    // Add button handlers
-    itemsContainer.querySelectorAll('.btn-ra-remove-criteria').forEach(btn => {
-      btn.addEventListener('click', () => {
-        btn.closest('.ra-criteria-item-edit').remove();
-        // Re-number
-        itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => {
-          num.textContent = idx + 1;
-        });
-      });
-    });
-
-    itemsContainer.querySelector('.btn-ra-add-criteria')?.addEventListener('click', () => {
-      const addBtn = itemsContainer.querySelector('.btn-ra-add-criteria');
-      const newItem = document.createElement('div');
-      newItem.className = 'ra-criteria-item-edit';
-      const count = itemsContainer.querySelectorAll('.ra-criteria-item-edit').length + 1;
-      newItem.innerHTML = `
-        <span class="ra-criteria-num ${group.classList[1]}">${count}</span>
-        <input type="text" class="ra-criteria-edit-input" value="" placeholder="Enter criterion..." />
-        <button class="btn-ra-remove-criteria">
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      `;
-      itemsContainer.insertBefore(newItem, addBtn);
-      newItem.querySelector('.btn-ra-remove-criteria').addEventListener('click', () => {
-        newItem.remove();
-        itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => { num.textContent = idx + 1; });
-      });
-      newItem.querySelector('input').focus();
-    });
-  });
-
-  // Make min match editable
-  const minMatchEl = panel.querySelector('.ra-criteria-min-match');
-  if (minMatchEl) {
-    const currentMin = goodToHaveMinMatch;
-    const totalGood = goodToHave.length;
-    minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
-  }
 }
 
 function renderScreeningConfig(job, panel) {
   const params = job.screeningParams || [];
-  const totalParams = params.reduce((a, c) => a + (c.params ? c.params.length : 0), 0);
+  const totalParams = params.reduce((a, c) => a + c.params.length, 0);
 
   panel.innerHTML = `
     <div class="jf-config-header">
@@ -3625,13 +3327,13 @@ function renderScreeningConfig(job, panel) {
           <span class="jf-ph-flex">Flexibility</span>
           <span class="jf-ph-resp">Preferred Response</span>
         </div>
-        ${(cat.params || []).map(p => `
+        ${cat.params.map(p => `
           <div class="jf-param-row">
             <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
             <span class="jf-pr-req"><input type="checkbox" ${p.required ? 'checked' : ''} /></span>
             <span class="jf-pr-param">${p.name}</span>
             <span class="jf-pr-flex"><select class="jf-select-sm"><option>Select</option><option>Must Match</option><option>Flexible</option><option>Nice to Have</option></select></span>
-            <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="${p.preferredResponse || ''}" placeholder="Enter preferred response..." /></span>
+            <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="${p.preferredResponse}" placeholder="Enter preferred response..." /></span>
           </div>
         `).join('')}
       </div>
@@ -3746,7 +3448,93 @@ function renderFunctionalConfig(job, panel) {
         </div>
       </div>
     </div>
+
+    <div class="jf-section" style="margin-top:16px;">
+      <div class="jf-section-header">
+        <h3 class="jf-section-title" style="display:flex;align-items:center;gap:8px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Edit Questions
+        </h3>
+      </div>
+      <div class="jf-questions-edit-list" id="jf-questions-list">
+        ${questions.map((q, i) => {
+          const typeColor = q.type === 'technical' ? '#38bdf8' : q.type === 'behavioral' ? '#a855f7' : q.type === 'situational' ? '#34d399' : '#fbbf24';
+          return `
+            <div class="jf-question-edit-row" data-qi="${i}">
+              <span class="jf-qe-num">${i + 1}</span>
+              <span class="jf-badge" style="color:${typeColor};border-color:${typeColor}30;background:${typeColor}10;font-size:0.65rem;">${(q.type || 'technical').charAt(0).toUpperCase() + (q.type || 'technical').slice(1)}</span>
+              <input type="text" class="jf-edit-input jf-qe-text" value="${(q.text || q.question || '').replace(/"/g, '&quot;')}" data-qi="${i}" />
+              <select class="jf-edit-input jf-qe-diff" data-qi="${i}" style="width:110px;">
+                <option ${q.difficulty === 'easy' ? 'selected' : ''}>easy</option>
+                <option ${q.difficulty === 'intermediate' || !q.difficulty ? 'selected' : ''}>intermediate</option>
+                <option ${q.difficulty === 'hard' ? 'selected' : ''}>hard</option>
+              </select>
+              <button class="btn-jf-remove-field jf-qe-delete" data-qi="${i}" title="Delete question">×</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn-jf-primary" id="btn-fi-add-question" style="flex:1;">+ Add Question</button>
+        <button class="btn-jf-primary" id="btn-fi-save-questions" style="flex:1;background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.3);color:#34d399;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Save Questions
+        </button>
+      </div>
+    </div>
   `;
+
+  panel.querySelectorAll('.jf-qe-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.jf-question-edit-row').remove();
+      panel.querySelectorAll('.jf-qe-num').forEach((num, i) => { num.textContent = i + 1; });
+    });
+  });
+
+  document.getElementById('btn-fi-add-question')?.addEventListener('click', () => {
+    const list = document.getElementById('jf-questions-list');
+    const idx = list.querySelectorAll('.jf-question-edit-row').length;
+    const row = document.createElement('div');
+    row.className = 'jf-question-edit-row';
+    row.dataset.qi = idx;
+    row.innerHTML = `
+      <span class="jf-qe-num">${idx + 1}</span>
+      <span class="jf-badge" style="color:#38bdf8;border-color:#38bdf830;background:#38bdf810;font-size:0.65rem;">Technical</span>
+      <input type="text" class="jf-edit-input jf-qe-text" value="" data-qi="${idx}" placeholder="Enter question..." />
+      <select class="jf-edit-input jf-qe-diff" data-qi="${idx}" style="width:110px;">
+        <option>easy</option><option selected>intermediate</option><option>hard</option>
+      </select>
+      <button class="btn-jf-remove-field jf-qe-delete" data-qi="${idx}" title="Delete question">×</button>
+    `;
+    list.appendChild(row);
+    row.querySelector('.jf-qe-delete').addEventListener('click', () => {
+      row.remove();
+      list.querySelectorAll('.jf-qe-num').forEach((num, i) => { num.textContent = i + 1; });
+    });
+    row.querySelector('input').focus();
+  });
+
+  document.getElementById('btn-fi-save-questions')?.addEventListener('click', () => {
+    const newQuestions = [];
+    panel.querySelectorAll('.jf-question-edit-row').forEach(row => {
+      const text = row.querySelector('.jf-qe-text')?.value.trim();
+      if (!text) return;
+      const qi = parseInt(row.dataset.qi);
+      const existing = questions[qi] || {};
+      newQuestions.push({
+        ...existing,
+        text: text,
+        question: text,
+        difficulty: row.querySelector('.jf-qe-diff')?.value || 'intermediate',
+        type: existing.type || 'technical'
+      });
+    });
+    job.questions = newQuestions;
+    saveStateToLocalStorage();
+    showPremiumToast(`${newQuestions.length} questions saved.`, 'success');
+    renderFunctionalConfig(job, panel);
+    renderJobFlowPipeline(job);
+  });
 }
 
 function renderFunnelStages(job) {
@@ -3781,7 +3569,7 @@ function renderFunnelStages(job) {
 
   const stageFilters = {
     'Total Candidates': () => jobCandidates,
-    'Resume Analysis': () => jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled')),
+    'Resume Analysis': () => jobCandidates.filter(c => c.status === 'Resume'),
     'Recruiter Screening': () => jobCandidates.filter(c => c.status === 'Screening'),
     'Functional Interview': () => jobCandidates.filter(c => c.status === 'Functional'),
     'Completed': () => jobCandidates.filter(c => c.status === 'Functional' || c.status === 'Hired'),
@@ -3898,22 +3686,11 @@ function drawFunnelSVG(job, candidates) {
   };
 
   function getBreakdownForStage(stageLabel) {
+    const status = stageStatusMap[stageLabel];
     let stageCands;
-    if (stageLabel === 'Total Candidates') {
-      stageCands = candidates;
-    } else if (stageLabel === 'Resume Analysis') {
-      stageCands = candidates.filter(c => c.status === 'Resume' || c.status === 'Screening' || c.status === 'Functional' || c.status === 'Hired');
-    } else if (stageLabel === 'Recruiter Screening') {
-      stageCands = candidates.filter(c => c.status === 'Screening' || c.status === 'Functional' || c.status === 'Hired');
-    } else if (stageLabel === 'Functional Interview') {
-      stageCands = candidates.filter(c => c.status === 'Functional' || c.status === 'Hired');
-    } else if (stageLabel === 'Completed') {
-      stageCands = candidates.filter(c => c.status === 'Functional' || c.status === 'Hired');
-    } else if (stageLabel === 'Qualified') {
-      stageCands = candidates.filter(c => c.status === 'Hired');
-    } else {
-      stageCands = [];
-    }
+    if (stageLabel === 'Total Candidates') stageCands = candidates;
+    else if (stageLabel === 'Completed') stageCands = candidates.filter(c => c.status === 'Functional' || c.status === 'Hired');
+    else stageCands = candidates.filter(c => c.status === status);
     const breakdown = {};
     stageCands.forEach(c => { const src = c.source || 'Unknown'; breakdown[src] = (breakdown[src] || 0) + 1; });
     return breakdown;
@@ -4344,142 +4121,8 @@ document.addEventListener('keydown', (e) => {
 // COMPONENT MOUNT BINDINGS
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  function addListenerSafe(id, type, callback) {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener(type, callback, { signal });
-  }
-
   // Load state from localStorage on startup
   loadStateFromLocalStorage();
-
-  // ============================================================
-  // AUTH: Fetch current user + wire up logout + org switcher
-  // ============================================================
-  // API calls use relative paths — Next.js proxies /api/* → http://127.0.0.1:8000/api/*
-  const API_BASE = '';
-
-  async function initAuth() {
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
-      if (res.status === 401) {
-        try {
-          await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-        } catch (e) {}
-        window.location.href = '/login';
-        return;
-      }
-      if (!res.ok) {
-        throw new Error(`Auth check failed with status ${res.status}`);
-      }
-      const user = await res.json();
-      AppState.user = user;
-
-      // Update sidebar user profile
-      const avatarEl = document.getElementById('user-avatar');
-      const nameEl   = document.getElementById('user-name');
-      const roleEl   = document.getElementById('user-role');
-      if (avatarEl) avatarEl.textContent = (user.name || user.email || 'U')[0].toUpperCase();
-      if (nameEl)   nameEl.textContent   = user.name || user.email || 'User';
-      const roleLabels = { super_admin: 'Super Admin', org_admin: 'Org Admin', member: 'Member' };
-      if (roleEl)   roleEl.textContent   = roleLabels[user.user_type] || user.user_type || 'User';
-
-      // Show/hide Team Access sidebar item based on role
-      const teamNav = document.querySelector('[data-tab="team"]');
-      if (teamNav) {
-        if (user.user_type === 'member') {
-          teamNav.style.display = 'none';
-        } else {
-          teamNav.style.display = '';
-        }
-      }
-
-      // Update greeting in banner
-      const bannerTitle = document.getElementById('header-main-title');
-      if (bannerTitle) {
-        const hour = new Date().getHours();
-        const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-        const emoji = hour < 12 ? '🌤️' : hour < 17 ? '☀️' : '🌙';
-        const firstName = (user.name || user.email || 'there').split(' ')[0];
-        bannerTitle.textContent = `${greeting}, ${firstName} ${emoji}`;
-      }
-
-      // Super admin: show org switcher
-      if (user.user_type === 'super_admin') {
-        const switcher = document.getElementById('org-switcher-wrap');
-        if (switcher) switcher.style.display = 'block';
-
-        try {
-          const orgsRes = await fetch(`${API_BASE}/api/auth/organisations`, { credentials: 'include' });
-          if (orgsRes.ok) {
-            const orgs = await orgsRes.json();
-            const list = document.getElementById('org-switcher-list');
-            const label = document.getElementById('org-switcher-label');
-
-            // Set current org label
-            if (label && user.organisation_name) label.textContent = user.organisation_name;
-
-            if (list) {
-              list.innerHTML = '';
-              orgs.forEach(org => {
-                const isActive = org.id === user.organisation_id;
-                const item = document.createElement('button');
-                item.style.cssText = `
-                  width:100%; text-align:left; background:${isActive ? 'rgba(var(--color-gold-rgb), 0.1)' : 'transparent'};
-                  border:none; border-radius:8px; padding:9px 12px; color:${isActive ? 'var(--color-gold)' : 'var(--color-text-muted, #a3a39e)'};
-                  font-size:0.82rem; font-weight:${isActive ? '700' : '500'}; cursor:pointer;
-                  transition:background 0.15s ease, color 0.15s ease; font-family:inherit;
-                  display:flex; align-items:center; gap:8px;
-                `;
-                item.innerHTML = `
-                  <span style="width:6px;height:6px;border-radius:50%;background:${isActive ? 'var(--color-gold)' : 'rgba(255,255,255,0.2)'};flex-shrink:0;"></span>
-                  ${org.org_name}
-                `;
-                item.onmouseenter = () => { if (!isActive) { item.style.background = 'rgba(255,255,255,0.05)'; item.style.color = 'var(--color-text-primary, #fafaf7)'; } };
-                item.onmouseleave = () => { if (!isActive) { item.style.background = 'transparent'; item.style.color = 'var(--color-text-muted, #a3a39e)'; } };
-                item.addEventListener('click', async () => {
-                  try {
-                    const switchRes = await fetch(`${API_BASE}/api/auth/switch-context`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      credentials: 'include',
-                      body: JSON.stringify({ organisation_id: org.id }),
-                    });
-                    if (switchRes.ok) {
-                      document.getElementById('org-switcher-dropdown').style.display = 'none';
-                      window.location.reload();
-                    }
-                  } catch(e) { console.warn('Switch org failed', e); }
-                });
-                list.appendChild(item);
-              });
-            }
-
-            // Toggle dropdown (registered globally on startup now)
-          }
-        } catch(e) { console.warn('Could not load orgs for switcher', e); }
-      }
-
-    } catch(e) {
-      console.warn('Auth init failed:', e);
-    }
-  }
-
-
-  initAuth();
-
-  // Logout
-  addListenerSafe('btn-logout', 'click', async () => {
-    try {
-      await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch(e) {}
-    window.location.href = '/login';
-  });
-
-
-  // Handle popstate for back/forward navigation routing
-  window.addEventListener('popstate', () => {
-    handleInitialRouting();
-  });
 
   // Sidebar Collapse Toggle
   const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
@@ -4491,19 +4134,6 @@ document.addEventListener('DOMContentLoaded', () => {
         soundEngine.playClick();
       }
     });
-  }
-
-  // Org Switcher Dropdown Toggle
-  const orgBtn = document.getElementById('org-switcher-btn');
-  const orgDropdown = document.getElementById('org-switcher-dropdown');
-  if (orgBtn && orgDropdown) {
-    orgBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = orgDropdown.style.display === 'block';
-      orgDropdown.style.display = isOpen ? 'none' : 'block';
-    }, { signal });
-    document.addEventListener('click', () => { if (orgDropdown) orgDropdown.style.display = 'none'; });
-    orgDropdown.addEventListener('click', e => e.stopPropagation(), { signal });
   }
 
   // Breadcrumbs: Client Portal Click
@@ -4531,7 +4161,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       navigateToTab(tabId);
-    }, { signal });
+    });
   });
 
   // Settings subnav clicks
@@ -4540,11 +4170,12 @@ document.addEventListener('DOMContentLoaded', () => {
       e.stopPropagation();
       const subtabId = subItem.getAttribute('data-subtab');
       navigateToSubtab(subtabId);
-    }, { signal });
+    });
   });
 
   // B. Contextual Action Button (Header)
-  addListenerSafe('header-action-btn', 'click', () => {
+  const headerActionBtn = document.getElementById('header-action-btn');
+  headerActionBtn.addEventListener('click', () => {
     if (AppState.activeTab === 'team') {
       openDrawer('member');
     } else {
@@ -4553,20 +4184,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // C. Drawer Close actions
-  addListenerSafe('drawer-backdrop', 'click', closeDrawers);
-  addListenerSafe('btn-close-drawer-job', 'click', closeDrawers);
-  addListenerSafe('btn-close-drawer-member', 'click', closeDrawers);
-  addListenerSafe('btn-close-drawer-view-jd', 'click', closeDrawers);
+  document.getElementById('drawer-backdrop').addEventListener('click', closeDrawers);
+  document.getElementById('btn-close-drawer-job').addEventListener('click', closeDrawers);
+  document.getElementById('btn-close-drawer-member').addEventListener('click', closeDrawers);
+  document.getElementById('btn-close-drawer-view-jd').addEventListener('click', closeDrawers);
   
-  addListenerSafe('btn-save-drawer-jd', 'click', () => {
+  document.getElementById('btn-save-drawer-jd').addEventListener('click', () => {
     const drawer = document.getElementById('drawer-view-jd');
-    if (!drawer) {
-      closeDrawers();
-      return;
-    }
     const jobId = drawer.getAttribute('data-current-job-id');
-    const descEl = document.getElementById('drawer-jd-text');
-    const descriptionText = descEl ? descEl.value.trim() : '';
+    const descriptionText = document.getElementById('drawer-jd-text').value.trim();
     if (jobId) {
       const job = AppState.jobs.find(j => j.id === jobId);
       if (job) {
@@ -4665,7 +4291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
   });
 
-  window.handleJobKebab = async function(jobId, action) {
+  window.handleJobKebab = function(jobId, action) {
     document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
     const job = AppState.jobs.find(j => j.id === jobId);
     if (!job) return;
@@ -4677,42 +4303,24 @@ document.addEventListener('DOMContentLoaded', () => {
         openJobFlowView(jobId);
         break;
       case 'career-page': {
-        const nextListed = !job.listedOnCareer;
-        try {
-          await apiFetch(`/api/jobs/${jobId}/settings`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ is_job_listed: nextListed })
-          });
-          await loadStateFromBackend();
-          const label = nextListed ? 'listed on' : 'removed from';
-          showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
-        } catch (err) {
-          console.error(err);
-          showPremiumToast('Failed to update career page status.', 'error');
-        }
+        job.listedOnCareer = !job.listedOnCareer;
+        renderJobCards();
+        const label = job.listedOnCareer ? 'listed on' : 'removed from';
+        showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
         break;
       }
       case 'duplicate': {
-        const name = (job.cardName || job.roleName) + ' (Copy)';
-        try {
-          const createdJob = await apiFetch('/api/jobs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: name,
-              role_name: job.roleName || 'Untitled Role',
-              experience_band: job.experienceBand || 'Upto 2 Years',
-              status: 'draft',
-              description: job.description || ''
-            })
-          });
-          await loadStateFromBackend();
-          showPremiumToast(`Job duplicated as "${name}".`, 'success');
-        } catch (err) {
-          console.error(err);
-          showPremiumToast('Failed to duplicate job.', 'error');
-        }
+        const dup = JSON.parse(JSON.stringify(job));
+        dup.id = 'JOB-' + Math.random().toString(36).substr(2, 8).toUpperCase();
+        dup.cardName = (job.cardName || job.roleName) + ' (Copy)';
+        dup.status = 'draft';
+        dup.listedOnCareer = false;
+        dup.created = new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+        dup.pipeline = { total: 0, resume: 0, screening: 0, functional: 0 };
+        AppState.jobs.push(dup);
+        renderJobCards();
+        updateJobsCounters();
+        showPremiumToast(`Job duplicated as "${dup.cardName}".`, 'success');
         break;
       }
       case 'settings':
@@ -4723,47 +4331,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 100);
         break;
       case 'archive':
-        try {
-          await apiFetch(`/api/jobs/${jobId}/settings`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'archived' })
-          });
-          await loadStateFromBackend();
-          showPremiumToast(`"${job.cardName || job.roleName}" has been archived.`, 'success');
-        } catch (err) {
-          console.error(err);
-          showPremiumToast('Failed to archive job.', 'error');
-        }
+        job.status = 'archived';
+        renderJobCards();
+        updateJobsCounters();
+        showPremiumToast(`"${job.cardName || job.roleName}" has been archived.`, 'success');
         break;
       case 'unarchive':
-        try {
-          await apiFetch(`/api/jobs/${jobId}/settings`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'published' })
-          });
-          await loadStateFromBackend();
-          showPremiumToast(`"${job.cardName || job.roleName}" has been restored.`, 'success');
-        } catch (err) {
-          console.error(err);
-          showPremiumToast('Failed to restore job.', 'error');
-        }
+        job.status = 'published';
+        renderJobCards();
+        updateJobsCounters();
+        showPremiumToast(`"${job.cardName || job.roleName}" has been restored.`, 'success');
         break;
       case 'delete': {
         const name = job.cardName || job.roleName;
-        if (confirm(`Are you sure you want to permanently delete "${name}"? This will also delete all associated candidates.`)) {
-          try {
-            await apiFetch(`/api/jobs/${jobId}`, {
-              method: 'DELETE'
-            });
-            await loadStateFromBackend();
-            showPremiumToast(`"${name}" has been permanently deleted.`, 'success');
-          } catch (err) {
-            console.error(err);
-            showPremiumToast('Failed to delete job.', 'error');
-          }
-        }
+        const idx = AppState.jobs.findIndex(j => j.id === jobId);
+        if (idx === -1) break;
+        AppState.jobs.splice(idx, 1);
+        AppState.candidates = AppState.candidates.filter(c => c.jobApplied !== job.roleName && c.jobApplied !== job.cardName);
+        renderJobCards();
+        updateJobsCounters();
+        updateSummaryMetrics();
+        showPremiumToast(`"${name}" has been permanently deleted.`, 'success');
         break;
       }
     }
@@ -4780,22 +4368,16 @@ document.addEventListener('DOMContentLoaded', () => {
     editJobModalTags = Array.isArray(job.tags) ? [...job.tags] : [];
 
     const modal = document.getElementById('modal-edit-job');
-    if (modal) {
-      const nameEl = document.getElementById('modal-edit-job-name');
-      if (nameEl) nameEl.value = job.cardName || job.roleName || '';
-      const descEl = document.getElementById('modal-edit-job-description');
-      if (descEl) descEl.value = job.description || '';
-      renderEditJobTags();
-      modal.style.display = '';
-      if (nameEl) setTimeout(() => nameEl.focus(), 50);
-      soundEngine.playChime([392.00, 523.25], 0.12, 0.1);
-    }
+    document.getElementById('modal-edit-job-name').value = job.cardName || job.roleName || '';
+    document.getElementById('modal-edit-job-id').value = job.customJobId && job.customJobId !== '-' ? job.customJobId : '';
+    renderEditJobTags();
+    modal.style.display = '';
+    setTimeout(() => document.getElementById('modal-edit-job-name').focus(), 50);
+    soundEngine.playChime([392.00, 523.25], 0.12, 0.1);
   }
-  window.openEditJobModal = openEditJobModal;
 
   function closeEditJobModal() {
-    const modal = document.getElementById('modal-edit-job');
-    if (modal) modal.style.display = 'none';
+    document.getElementById('modal-edit-job').style.display = 'none';
     editJobModalJobId = null;
     editJobModalTags = [];
     soundEngine.playClick();
@@ -4803,25 +4385,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderEditJobTags() {
     const list = document.getElementById('modal-edit-tags-list');
-    if (list) {
-      list.innerHTML = editJobModalTags.map((tag, i) =>
-        `<span class="modal-tag">${tag}<button class="modal-tag-remove" data-idx="${i}">×</button></span>`
-      ).join('');
-      list.querySelectorAll('.modal-tag-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-          editJobModalTags.splice(parseInt(btn.dataset.idx), 1);
-          renderEditJobTags();
-        });
+    list.innerHTML = editJobModalTags.map((tag, i) =>
+      `<span class="modal-tag">${tag}<button class="modal-tag-remove" data-idx="${i}">×</button></span>`
+    ).join('');
+    list.querySelectorAll('.modal-tag-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        editJobModalTags.splice(parseInt(btn.dataset.idx), 1);
+        renderEditJobTags();
       });
-    }
+    });
   }
 
-  addListenerSafe('modal-edit-job-close', 'click', closeEditJobModal);
-  addListenerSafe('modal-edit-job', 'click', (e) => {
+  document.getElementById('modal-edit-job-close').addEventListener('click', closeEditJobModal);
+  document.getElementById('modal-edit-job').addEventListener('click', (e) => {
     if (e.target.id === 'modal-edit-job') closeEditJobModal();
   });
 
-  addListenerSafe('modal-edit-tags-input', 'keydown', (e) => {
+  document.getElementById('modal-edit-tags-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       const val = e.target.value.replace(/,/g, '').trim();
@@ -4833,46 +4413,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  addListenerSafe('modal-edit-job-save', 'click', async () => {
+  document.getElementById('modal-edit-job-save').addEventListener('click', () => {
     const job = AppState.jobs.find(j => j.id === editJobModalJobId);
     if (!job) return;
-    const nameEl = document.getElementById('modal-edit-job-name');
-    const nameVal = nameEl ? nameEl.value.trim() : '';
+    const nameVal = document.getElementById('modal-edit-job-name').value.trim();
     if (!nameVal) {
       showPremiumToast('Job name is required.', 'error');
       return;
     }
-    const descEl = document.getElementById('modal-edit-job-description');
-    const descVal = descEl ? descEl.value.trim() : '';
-    
-    try {
-      await apiFetch(`/api/jobs/${editJobModalJobId}/settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: nameVal,
-          description: descVal || null,
-          tags: [...editJobModalTags]
-        })
-      });
-      closeEditJobModal();
-      await loadStateFromBackend();
-      showPremiumToast(`Job updated to "${nameVal}".`, 'success');
-      
-      // If we are currently in the Job Flow view, re-render the active card config to show updated name/description
-      if (AppState.activeTab === 'job-flow' && AppState.activeJobId === editJobModalJobId) {
-        const updatedJob = AppState.jobs.find(j => j.id === editJobModalJobId);
-        if (updatedJob) {
-          const activeCard = document.querySelector('.jf-stage-card.active');
-          const stageKey = activeCard ? activeCard.dataset.stage : 'careerPage';
-          renderJobFlowPipeline(updatedJob);
-          renderJobFlowConfig(updatedJob, stageKey);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      showPremiumToast('Failed to update job.', 'error');
-    }
+    job.cardName = nameVal;
+    const idVal = document.getElementById('modal-edit-job-id').value.trim();
+    if (idVal) job.customJobId = idVal;
+    job.tags = [...editJobModalTags];
+    closeEditJobModal();
+    renderJobCards();
+    updateJobsCounters();
+    showPremiumToast(`Job updated to "${nameVal}".`, 'success');
   });
 
   const closeReportBtn = document.getElementById('btn-close-drawer-report');
@@ -5036,7 +4592,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1. Create Job Card Submission
   const createJobForm = document.getElementById('form-create-job');
   if (createJobForm) {
-    createJobForm.addEventListener('submit', async (e) => {
+    createJobForm.addEventListener('submit', (e) => {
       e.preventDefault();
       
       const cardName = document.getElementById('job-title-input').value;
@@ -5049,139 +4605,142 @@ document.addEventListener('DOMContentLoaded', () => {
         customId = '-';
       }
 
-      // Pipeline stages config
+      // Pipeline stages counts
       const addResume = document.getElementById('chk-resume').checked;
       const addScreening = document.getElementById('chk-screening').checked;
       const addFunctional = document.getElementById('chk-functional').checked;
 
-      try {
-        const createdJob = await apiFetch('/api/jobs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: cardName,
-            role_name: roleName,
-            experience_band: expBand,
-            custom_job_id: customId === '-' ? null : customId,
-            status: 'draft',
-            resume_analysis_enabled: addResume,
-            recruiter_screening_enabled: addScreening,
-            functional_interview_enabled: addFunctional,
-            description: description || "No job description provided."
-          })
-        });
+      let totalApplicants = 0;
+      let resumeVal = 0;
+      let screeningVal = 0;
+      let functionalVal = 0;
 
-        if (createdJob) {
-          await loadStateFromBackend();
-          // Close Drawer panel
-          closeDrawers();
-          createJobForm.reset();
-          showPremiumToast(`Job "${roleName}" created successfully.`, "success");
-          soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Melodic confirmation chime
-          openJobFlowView(String(createdJob.id));
-        } else {
-          throw new Error("Failed to create job");
-        }
-      } catch (err) {
-        console.error("Failed to create job:", err);
-        showPremiumToast(`Error: ${err.message}`, "error");
+      // Simulate mock applicant distribution and push records
+      const firstNames = ['Lucas', 'Sofia', 'Marcus', 'Chloe', 'Daniel', 'Amina'];
+      const lastNames = ['Chen', 'Silva', 'Taylor', 'Nakamura', 'Oki', 'Ali'];
+      
+      const createMockCandidate = (status) => {
+        const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
+        const email = `${name.toLowerCase().replace(' ', '.')}@recruit.io`;
+        const id = `CAN-${Math.floor(Math.random() * 8999 + 1000)}-${customId !== '-' ? customId.slice(-3) : generateJobId().slice(-3)}`;
+        const scoreVal = Math.floor(Math.random() * 15 + 80) + '%';
+        
+        AppState.candidates.push({
+          id,
+          name,
+          email,
+          jobApplied: roleName,
+          status,
+          score: scoreVal,
+          registeredOn: new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:00 AM'
+        });
+      };
+
+      if (addResume) {
+        createMockCandidate('Resume');
+        resumeVal++;
+        totalApplicants++;
       }
+      if (addScreening) {
+        createMockCandidate('Screening');
+        createMockCandidate('Screening');
+        screeningVal += 2;
+        totalApplicants += 2;
+      }
+      if (addFunctional) {
+        createMockCandidate('Functional');
+        functionalVal++;
+        totalApplicants++;
+      }
+
+      const newJob = {
+        id: generateJobId(),
+        roleName: roleName,
+        cardName: cardName,
+        created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+        status: 'published',
+        customJobId: customId,
+        experienceBand: expBand,
+        createdBy: 'Devasri',
+        description: description || "No job description provided.",
+        questions: [],
+        pipeline: {
+          total: totalApplicants,
+          resume: resumeVal,
+          screening: screeningVal,
+          functional: functionalVal
+        }
+      };
+
+      AppState.jobs.push(newJob);
+
+      // Refresh display
+      const isBoard = document.getElementById('btn-view-board').classList.contains('active');
+      if (isBoard) {
+        renderKanbanBoard();
+      } else {
+        renderJobCards();
+      }
+      updateSummaryMetrics();
+      renderAnalyticsTable();
+      
+      // Close Drawer panel
+      closeDrawers();
+      createJobForm.reset();
+      soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Melodic confirmation chime
     });
   }
 
   // 2. Invite Team Member Submission
   const inviteMemberForm = document.getElementById('form-invite-member');
-  if (inviteMemberForm) {
-    inviteMemberForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
+  inviteMemberForm.addEventListener('submit', (e) => {
+    e.preventDefault();
 
-      const name = document.getElementById('member-name-input').value;
-      const email = document.getElementById('member-email-input').value;
-      const designation = document.getElementById('member-designation-input').value;
-      const usertype = document.getElementById('member-role-input').value;
+    const name = document.getElementById('member-name-input').value;
+    const email = document.getElementById('member-email-input').value;
+    const designation = document.getElementById('member-designation-input').value;
+    const usertype = document.getElementById('member-role-input').value;
 
-      // map user_type
-      let userTypeMapped = 'member';
-      if (usertype.toLowerCase().includes('admin') || usertype === 'org_admin') {
-        userTypeMapped = 'org_admin';
-      }
+    const newMember = {
+      name: name,
+      email: email,
+      designation: designation,
+      usertype: usertype,
+      registeredOn: new Date().toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+      status: 'Invited'
+    };
 
-      try {
-        const result = await apiFetch('/api/team/invite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: name,
-            email: email,
-            designation: designation,
-            user_type: userTypeMapped
-          })
-        });
+    AppState.team.push(newMember);
 
-        if (result) {
-          await loadStateFromBackend();
-          showPremiumToast(`Invited ${name} to team successfully.`, "success");
-          // Close Drawer panel
-          closeDrawers();
-          inviteMemberForm.reset();
-          soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Confirmation chime
-        } else {
-          throw new Error("Failed to invite member");
-        }
-      } catch (err) {
-        console.error("Failed to invite member:", err);
-        showPremiumToast(`Error: ${err.message}`, "error");
-      }
-    });
-  }
+    // Refresh display
+    renderTeamTable();
+
+    // Close Drawer panel
+    closeDrawers();
+    inviteMemberForm.reset();
+    soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Confirmation chime
+  });
 
   // 3. Settings Forms (Mock updates with inline alerts)
-  const careerSettingsForm = document.getElementById('career-settings-form');
-  if (careerSettingsForm) {
-    careerSettingsForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      soundEngine.playChime([523.25], 0.15);
-      const domainName = document.getElementById('career-subdomain').value;
-      const introText = document.getElementById('career-intro').value;
-
-      try {
-        const response = await apiFetch('/api/organisation', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            org_name: 'Devasri Tech',
-            domain: domainName,
-            description: introText
-          })
-        });
-
-        if (response) {
-          const statusLink = document.querySelector('.status-link');
-          if (statusLink) {
-            statusLink.textContent = `interviehire.com/careers/${domainName} ↗`;
-            statusLink.href = `https://interviehire.com/careers/${domainName}`;
-          }
-
-          const submitBtn = e.target.querySelector('button[type="submit"]');
-          const origText = submitBtn.textContent;
-          submitBtn.textContent = '✓ Saved Settings!';
-          submitBtn.style.background = 'var(--color-success)';
-          submitBtn.style.color = '#fff';
-          setTimeout(() => {
-            submitBtn.textContent = origText;
-            submitBtn.style.background = '';
-            submitBtn.style.color = '';
-          }, 2000);
-          showPremiumToast("Organisation settings saved.", "success");
-        } else {
-          throw new Error("Failed to save organization settings");
-        }
-      } catch (err) {
-        console.error("Failed to save organization settings:", err);
-        showPremiumToast(`Error: ${err.message}`, "error");
-      }
-    });
-  }
+  document.getElementById('career-settings-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    soundEngine.playChime([523.25], 0.15);
+    const domainName = document.getElementById('career-subdomain').value;
+    const statusLink = document.querySelector('.status-link');
+    statusLink.textContent = `IntervieHire.com/careers/${domainName} ↗`;
+    statusLink.href = `https://IntervieHire.com/careers/${domainName}`;
+    
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const origText = submitBtn.textContent;
+    submitBtn.textContent = '✓ Saved Settings!';
+    submitBtn.style.background = 'var(--color-success)';
+    submitBtn.style.color = '#fff';
+    setTimeout(() => {
+      submitBtn.textContent = origText;
+      submitBtn.style.background = '';
+      submitBtn.style.color = '';
+    }, 2000);
+  });
 
   document.querySelectorAll('.settings-toggle:not([style*="pointer-events"])').forEach(toggle => {
     toggle.addEventListener('click', () => {
@@ -5191,40 +4750,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  const passwordForm = document.getElementById('password-form');
-  if (passwordForm) {
-    passwordForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const oldPass = document.getElementById('old-pass').value;
-      const newPass = document.getElementById('new-pass').value;
-      const confirmPass = document.getElementById('confirm-pass').value;
-
-      if (newPass !== confirmPass) {
-        showPremiumToast("New passwords do not match", "error");
-        return;
-      }
-
-      try {
-        const response = await apiFetch('/api/settings/password', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            current_password: oldPass,
-            new_password: newPass
-          })
-        });
-
-        if (response) {
-          showPremiumToast("Password updated successfully!", "success");
-          passwordForm.reset();
-        } else {
-          throw new Error("Failed to change password");
-        }
-      } catch (err) {
-        console.error("Failed to change password:", err);
-        showPremiumToast(`Error: ${err.message}`, "error");
-      }
+  const btnChangePass = document.getElementById('btn-change-password');
+  if (btnChangePass) {
+    btnChangePass.addEventListener('click', () => {
+      soundEngine.playClick();
+      showPremiumToast('Password change dialog would open here.', 'info');
     });
   }
 
@@ -5529,7 +5059,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleCreateJobFile(file) {
     if (!file) return;
     createJobUploadedFileName = file.name;
-    createJobUploadedFile = file;
     const preview = document.getElementById('dropzone-file-preview');
     if (preview) {
       preview.style.display = 'flex';
@@ -5551,10 +5080,16 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     if (jdDropzone) jdDropzone.classList.add('has-file');
-    const reader = new FileReader();
-    reader.onload = (ev) => { createJobUploadedText = ev.target.result; };
-    reader.onerror = () => { createJobUploadedText = null; };
-    reader.readAsText(file);
+    createJobUploadedFile = file;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'txt') {
+      const reader = new FileReader();
+      reader.onload = (ev) => { createJobUploadedText = ev.target.result; };
+      reader.onerror = () => { createJobUploadedText = null; };
+      reader.readAsText(file);
+    } else {
+      createJobUploadedText = null;
+    }
     soundEngine.playChime([523.25], 0.1, 0.08);
   }
 
@@ -5575,74 +5110,89 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Continue button — process file or pasted text with DeepSeek/fallback parser
+  // Continue button — process file or pasted text with DeepSeek
   const btnContinue = document.getElementById('btn-create-job-continue');
   if (btnContinue) {
     btnContinue.addEventListener('click', async () => {
       const pasteArea = document.getElementById('create-jd-paste');
       const pastedText = (pasteArea && pasteArea.style.display !== 'none') ? pasteArea.value.trim() : '';
-      const textToProcess = pastedText || createJobUploadedText;
+      let textToProcess = pastedText || createJobUploadedText;
       const sourceName = createJobUploadedFileName || 'pasted text';
 
-      if (!textToProcess) {
+      if (!textToProcess && !createJobUploadedFile) {
         showPremiumToast("Upload a file or paste a job description first.", "error");
         return;
       }
 
       const originalHTML = btnContinue.innerHTML;
       btnContinue.disabled = true;
+
+      if (!textToProcess && createJobUploadedFile) {
+        btnContinue.innerHTML = `<div class="spinner-mini" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></div> Reading file...`;
+        try {
+          const formData = new FormData();
+          formData.append('file', createJobUploadedFile);
+          const parseResp = await fetch('/api/parse-file', { method: 'POST', body: formData });
+          if (!parseResp.ok) throw new Error('Parse failed');
+          const parseData = await parseResp.json();
+          textToProcess = parseData.text;
+          createJobUploadedText = parseData.text;
+        } catch (e) {
+          showPremiumToast("Failed to read file. Try pasting the text instead.", "error");
+          btnContinue.disabled = false;
+          btnContinue.innerHTML = originalHTML;
+          return;
+        }
+      }
+
+      if (!textToProcess) {
+        showPremiumToast("Could not extract text from file. Try pasting it instead.", "error");
+        btnContinue.disabled = false;
+        btnContinue.innerHTML = originalHTML;
+        return;
+      }
+
       btnContinue.innerHTML = `<div class="spinner-mini" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></div> Processing...`;
 
       soundEngine.playChime([392, 440], 0.1, 0.1);
 
+      const systemPrompt = `You are a job description parser. Extract structured job info from the provided text.
+Return ONLY valid JSON:
+{"roleName":"exact job title","cardName":"job title + brief context","experienceBand":"one of: Upto 2 Years | 1-4 Years | 3-6 Years | 5+ Years | 8+ Years","description":"clean 2-3 sentence professional job description"}`;
+
       try {
-        const formData = new FormData();
-        let fileToSend = createJobUploadedFile;
-        if (!fileToSend && pastedText) {
-          fileToSend = new File([pastedText], "job_description.txt", { type: "text/plain" });
-        }
-        if (!fileToSend) {
-          throw new Error("No file or pasted text found");
-        }
-        formData.append('file', fileToSend);
+        const response = await callDeepSeekAPI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Parse this job description:\n\n${textToProcess.slice(0, 2500)}` }
+        ], true);
 
-        const parsed = await apiFetch('/api/jobs/extract-jd', {
-          method: 'POST',
-          body: formData
-        });
+        const parsed = JSON.parse(sanitizeJSONResponse(response));
+        const newJob = {
+          id: generateJobId(),
+          roleName: parsed.roleName,
+          cardName: parsed.cardName || parsed.roleName,
+          created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+          status: 'published',
+          customJobId: '-',
+          experienceBand: parsed.experienceBand || 'Upto 2 Years',
+          createdBy: 'Devasri',
+          description: parsed.description || textToProcess.slice(0, 500),
+          questions: [],
+          pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }
+        };
+        AppState.jobs.unshift(newJob);
+        saveStateToLocalStorage();
 
-        if (!parsed) {
-          throw new Error("Failed to extract job details from server");
-        }
+        btnContinue.innerHTML = `<div class="spinner-mini" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></div> Generating interview pipeline...`;
 
-        const createdJob = await apiFetch('/api/jobs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: parsed.card_name || parsed.role_name,
-            role_name: parsed.role_name,
-            experience_band: parsed.experience_band || 'Upto 2 Years',
-            status: 'draft',
-            description: parsed.description || textToProcess,
-            resume_parameters: parsed.resume_parameters,
-            screening_parameters: parsed.screening_parameters,
-            functional_parameters: parsed.functional_parameters
-          })
-        });
+        await enrichJobWithAI(newJob, textToProcess);
 
-        if (createdJob) {
-          await loadStateFromBackend();
-          showPremiumToast(`Job "${parsed.role_name}" created successfully.`, "success");
-          soundEngine.playChime([329.63, 392, 523.25], 0.2, 0.08);
-          btnContinue.disabled = false;
-          btnContinue.innerHTML = originalHTML;
-          openJobFlowView(String(createdJob.id), false);
-        } else {
-          throw new Error("Failed to create job");
-        }
+        showPremiumToast(`Job "${parsed.roleName}" created with AI-generated pipeline.`, "success");
+        soundEngine.playChime([329.63, 392, 523.25, 659.25], 0.2, 0.08);
+        openJobFlowView(newJob.id, true);
       } catch (err) {
         console.error("Job creation from JD failed:", err);
-        showPremiumToast(err.message || "Failed to process job description.", "error");
+        showPremiumToast("Failed to process job description. Check API status.", "error");
         btnContinue.disabled = false;
         btnContinue.innerHTML = originalHTML;
       }
@@ -6266,7 +5816,6 @@ function navigateToSourcing(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'sourcing';
-  updateURLRoute('sourcing', jobId);
 
   // Highlight Jobs sidebar
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -6448,9 +5997,9 @@ function renderCsvPreview() {
   countSpan.textContent = csvParsedCandidates.length;
   tbody.innerHTML = csvParsedCandidates.map(cand => `
     <tr>
-      <td><strong>${cand.name}</strong></td>
-      <td>${cand.email}</td>
-      <td>${cand.phone || '-'}</td>
+      <td><strong>\${cand.name}</strong></td>
+      <td>\${cand.email}</td>
+      <td>\${cand.phone || '-'}</td>
       <td><span class="upload-file-status-badge done">Ready to Sync</span></td>
     </tr>
   `).join('');
@@ -6459,46 +6008,37 @@ function renderCsvPreview() {
   soundEngine.playChime([392.00, 523.25], 0.15, 0.08);
 }
 
-async function importCsvCandidates() {
+function importCsvCandidates() {
   if (csvParsedCandidates.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  const applicants = csvParsedCandidates.map(cand => ({
-    name: cand.name,
-    email: cand.email,
-    phone: cand.phone || null,
-    source: currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload'
-  }));
+  csvParsedCandidates.forEach(cand => {
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob);
+  });
 
-  try {
-    const result = await apiFetch(`/api/jobs/${activeJob.id}/applicants/bulk`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ applicants })
-    });
+  soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
+  showPremiumToast(`Successfully imported \${csvParsedCandidates.length} candidate(s) into "\${activeJob.roleName}".`, "success");
 
-    if (result) {
-      soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-      showPremiumToast(`Successfully imported ${csvParsedCandidates.length} candidate(s) into "${activeJob.roleName}".`, "success");
-      
-      // Reset
-      csvParsedCandidates = [];
-      document.getElementById('csv-preview-box').style.display = 'none';
-      const fileCsv = document.getElementById('input-file-csv');
-      if (fileCsv) fileCsv.value = '';
+  // Reset
+  csvParsedCandidates = [];
+  document.getElementById('csv-preview-box').style.display = 'none';
+  const fileCsv = document.getElementById('input-file-csv');
+  if (fileCsv) fileCsv.value = '';
 
-      // Reload from backend and navigate
-      await loadStateFromBackend();
-      navigateToJobDetail(AppState.activeJobId);
-    } else {
-      throw new Error("Failed to import candidates");
-    }
-  } catch (e) {
-    console.error("Failed to import CSV candidates:", e);
-    showPremiumToast(`Error: ${e.message}`, "error");
+  // Synchronize and navigate back
+  recalculateJobPipelines();
+  updateSummaryMetrics();
+  renderAnalyticsTable();
+  
+  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+    renderKanbanBoard();
+  } else {
+    renderJobCards();
   }
+
+  navigateToJobDetail(AppState.activeJobId);
 }
 
 // === Resumes Intake Logic ===
@@ -6525,35 +6065,52 @@ function simulateResumesParsing(files) {
 
   Array.from(files).forEach((file, idx) => {
     const item = {
-      file: file,
       name: file.name,
       size: (file.size / 1024).toFixed(1) + ' KB',
       progress: 0,
-      status: 'parsing'
+      status: 'parsing',
+      textContent: null
     };
     uploadedFiles.push(item);
 
+    const isTxt = /\.(txt|text)$/i.test(file.name);
+    const isPdfOrDocx = /\.(pdf|docx?)$/i.test(file.name);
+    if (isTxt) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const text = e.target.result;
+        if (!isGarbageText(text)) item.textContent = text;
+      };
+      reader.readAsText(file);
+    } else if (isPdfOrDocx) {
+      const fd = new FormData();
+      fd.append('file', file);
+      fetch('/api/parse-file', { method: 'POST', body: fd })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(data => { if (data.text && !isGarbageText(data.text)) item.textContent = data.text; })
+        .catch(() => {});
+    }
+
     const fileRow = document.createElement('div');
     fileRow.className = 'upload-file-item';
-    fileRow.id = `file-item-${idx}`;
+    fileRow.id = `file-item-\${idx}`;
     fileRow.innerHTML = `
       <div class="upload-file-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
       </div>
       <div class="upload-file-info">
-        <span class="upload-file-name">${item.name}</span>
-        <div class="upload-file-size">${item.size}</div>
+        <span class="upload-file-name">\${item.name}</span>
+        <div class="upload-file-size">\${item.size}</div>
       </div>
       <div class="upload-file-progress-wrap">
         <div class="upload-file-progress-bar">
-          <div class="upload-file-progress-inner" id="progress-inner-${idx}"></div>
+          <div class="upload-file-progress-inner" id="progress-inner-\${idx}"></div>
         </div>
       </div>
-      <span class="upload-file-status-badge parsing" id="status-badge-${idx}">Analyzing...</span>
+      <span class="upload-file-status-badge parsing" id="status-badge-\${idx}">Analyzing...</span>
     `;
     filesList.appendChild(fileRow);
 
-    // Simulate progress bars
     let currentProgress = 0;
     const interval = setInterval(() => {
       currentProgress += Math.floor(Math.random() * 20 + 15);
@@ -6561,7 +6118,7 @@ function simulateResumesParsing(files) {
         currentProgress = 100;
         clearInterval(interval);
 
-        const badge = document.getElementById(`status-badge-${idx}`);
+        const badge = document.getElementById(`status-badge-\${idx}`);
         if (badge) {
           badge.textContent = 'Extracted';
           badge.className = 'upload-file-status-badge done';
@@ -6571,7 +6128,7 @@ function simulateResumesParsing(files) {
         checkAllResumesDone();
       }
 
-      const progressInner = document.getElementById(`progress-inner-${idx}`);
+      const progressInner = document.getElementById(`progress-inner-\${idx}`);
       if (progressInner) {
         progressInner.style.setProperty('--progress', currentProgress / 100);
       }
@@ -6588,57 +6145,53 @@ function checkAllResumesDone() {
   }
 }
 
-async function importResumesCandidates() {
+function importResumesCandidates() {
   if (uploadedFiles.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  const formData = new FormData();
-  uploadedFiles.forEach(item => {
-    formData.append('files', item.file);
+  const importedCandIds = [];
+  uploadedFiles.forEach(file => {
+    const rawName = extractCandidateNameFromFilename(file.name);
+    const email = rawName.toLowerCase().replace(/\\s+/g, ".") + "@example.com";
+    const phone = "+1 (555) 01" + Math.floor(Math.random() * 900 + 100);
+    const candId = addCandidateToAppState(rawName, email, phone, activeJob, file.textContent);
+    importedCandIds.push(candId);
   });
 
-  try {
-    const sourceParam = currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload';
-    const res = await fetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes?source=${sourceParam}`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.detail || "Upload failed");
-    }
-    const createdApplicants = await res.json();
+  soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
+  showPremiumToast(`Imported \${uploadedFiles.length} candidate(s) — running AI analysis...`, "success");
 
-    if (createdApplicants) {
-      soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-      showPremiumToast(`Successfully processed and imported ${uploadedFiles.length} candidate(s) into "${activeJob.roleName}".`, "success");
-      
-      // Reset
-      uploadedFiles = [];
-      document.getElementById('resumes-preview-box').style.display = 'none';
-      const fileRes = document.getElementById('input-file-resumes');
-      if (fileRes) fileRes.value = '';
+  uploadedFiles = [];
+  document.getElementById('resumes-preview-box').style.display = 'none';
+  const fileRes = document.getElementById('input-file-resumes');
+  if (fileRes) fileRes.value = '';
 
-      // Reload from backend and navigate
-      await loadStateFromBackend();
-      navigateToJobDetail(AppState.activeJobId);
-    } else {
-      throw new Error("Failed to upload resumes");
-    }
-  } catch (e) {
-    console.error("Failed to upload resumes:", e);
-    showPremiumToast(`Error: ${e.message}`, "error");
+  recalculateJobPipelines();
+  updateSummaryMetrics();
+  renderAnalyticsTable();
+
+  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+    renderKanbanBoard();
+  } else {
+    renderJobCards();
+  }
+
+  navigateToJobDetail(AppState.activeJobId);
+
+  if (currentSourcingMode === 'analyse') {
+    setTimeout(() => {
+      runBulkResumeAnalysis(importedCandIds, activeJob);
+    }, 600);
   }
 }
 
 function extractCandidateNameFromFilename(filename) {
-  let name = filename.replace(/\.[^/.]+$/, ""); // strip extension
-  name = name.replace(/[_\-\.]/g, " "); // replace symbols
-  name = name.replace(/\b(resume|cv|hiring|job|developer|executive|profile|senior|junior|doc|pdf|en)\b/gi, "");
-  name = name.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  let name = filename.replace(/\\.[^/.]+$/, ""); // strip extension
+  name = name.replace(/[_\-\\.]/g, " "); // replace symbols
+  name = name.replace(/\\b(resume|cv|hiring|job|developer|executive|profile|senior|junior|doc|pdf|en)\\b/gi, "");
+  name = name.trim().split(/\\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   if (!name) name = "Candidate " + Math.floor(Math.random() * 1000);
   return name;
 }
@@ -6657,7 +6210,7 @@ function addCandidateToManualQueue() {
 
   if (!name || !email) return;
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
   if (!emailRegex.test(email)) {
     showPremiumToast("Please enter a valid email address.", "error");
     return;
@@ -6707,70 +6260,48 @@ function renderManualQueue() {
   container.innerHTML = sourcingQueue.map((cand, idx) => `
     <li class="queue-item">
       <div class="queue-item-details">
-        <span class="queue-item-name">${cand.name}</span>
-        <span class="queue-item-email">${cand.email} ${cand.phone ? ' · ' + cand.phone : ''}</span>
+        <span class="queue-item-name">\${cand.name}</span>
+        <span class="queue-item-email">\${cand.email} \${cand.phone ? ' · ' + cand.phone : ''}</span>
       </div>
-      <button class="btn-remove-queue" onclick="removeCandidateFromQueue(${idx})" title="Remove">
+      <button class="btn-remove-queue" onclick="removeCandidateFromQueue(\${idx})" title="Remove">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     </li>
   `).join('');
 }
 
-async function importManualQueue() {
+function importManualQueue() {
   if (sourcingQueue.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
 
-  const btnManualImport = document.getElementById('btn-manual-import');
-  if (btnManualImport) {
-    btnManualImport.disabled = true;
-    btnManualImport.textContent = 'Importing...';
-  }
+  sourcingQueue.forEach(cand => {
+    addCandidateToAppState(cand.name, cand.email, cand.phone, activeJob);
+  });
 
-  try {
-    // Submit each candidate to the backend
-    const results = await Promise.all(
-      sourcingQueue.map(cand =>
-        apiFetch(`/api/jobs/${activeJob.id}/applicants`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: cand.name,
-            email: cand.email,
-            phone: cand.phone || null,
-            source: currentSourcingMode === 'schedule' ? 'scheduled' : 'direct_link'
-          })
-        })
-      )
-    );
+  soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
+  showPremiumToast(`Successfully imported \${sourcingQueue.length} candidate(s) into "\${activeJob.roleName}".`, "success");
 
-    const successCount = results.filter(r => r).length;
-    if (successCount > 0) {
-      soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
-      showPremiumToast(`Successfully imported ${successCount} candidate(s) into "${activeJob.roleName}".`, 'success');
-      sourcingQueue = [];
-      renderManualQueue();
-      await loadStateFromBackend();
-    } else {
-      throw new Error('No candidates were imported successfully');
-    }
-  } catch (e) {
-    console.error('Failed to import manual queue:', e);
-    showPremiumToast(`Error: ${e.message}`, 'error');
-  } finally {
-    if (btnManualImport) {
-      btnManualImport.disabled = false;
-      btnManualImport.textContent = 'Import Queue';
-    }
+  sourcingQueue = [];
+  renderManualQueue();
+
+  // Synchronize and navigate back
+  recalculateJobPipelines();
+  updateSummaryMetrics();
+  renderAnalyticsTable();
+  
+  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+    renderKanbanBoard();
+  } else {
+    renderJobCards();
   }
 
   navigateToJobDetail(AppState.activeJobId);
 }
 
 // === Shared Candidate Insertion helper ===
-function addCandidateToAppState(name, email, phone, job) {
+function addCandidateToAppState(name, email, phone, job, resumeText) {
   const idChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let candId = 'CAN-';
   for (let i = 0; i < 4; i++) {
@@ -6786,7 +6317,7 @@ function addCandidateToAppState(name, email, phone, job) {
   const dateStr = `\${now.getDate().toString().padStart(2, '0')} \${months[now.getMonth()]} \${now.getFullYear()}, \${formatHour.toString().padStart(2, '0')}:\${now.getMinutes().toString().padStart(2, '0')} \${ampm}`;
 
   const status = currentSourcingMode === 'analyse' ? 'Resume' : 'Screening';
-  const score = `\${Math.floor(Math.random() * 20 + 80)}%`;
+  const score = '—';
 
   AppState.candidates.push({
     id: candId,
@@ -6797,6 +6328,12 @@ function addCandidateToAppState(name, email, phone, job) {
     score: score,
     registeredOn: dateStr
   });
+
+  if (resumeText && !isGarbageText(resumeText)) {
+    resumeTextCache[candId] = resumeText;
+  }
+
+  return candId;
 }
 
 function showPremiumToast(message, type = 'success') {
@@ -7025,49 +6562,91 @@ function renderResumeStagePaneForJob(candidates, job, container) {
     return 'pending';
   };
 
+  const getRecBadge = (rec) => {
+    if (!rec) return '';
+    const cls = rec === 'Advance' ? 'high' : rec === 'Hold' ? 'medium' : 'low';
+    return `<span class="ra-rec-badge ${cls}">${rec}</span>`;
+  };
+
+  const pendingCount = candidates.filter(c => !resumeAnalysisCache[c.id]).length;
+  const analysedCount = candidates.length - pendingCount;
+
   container.innerHTML = `
     <div class="stage-table-container">
+      <div class="ra-toolbar">
+        <div class="ra-toolbar-left">
+          <span class="ra-toolbar-stat">${analysedCount} analysed</span>
+          <span class="ra-toolbar-stat pending">${pendingCount} pending</span>
+        </div>
+        <div class="ra-toolbar-right">
+          ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Analyse All (${pendingCount})
+          </button>` : ''}
+        </div>
+      </div>
       <div class="ra-table-wrapper">
         <table class="ra-data-table">
           <thead>
             <tr>
-              <th><input type="checkbox" class="table-checkbox-all" /></th>
+              <th style="width:36px;"><input type="checkbox" class="table-checkbox-all" /></th>
               <th>Candidate</th>
-              <th>Match Score</th>
-              <th>Status</th>
-              <th>Resume</th>
+              <th>Match</th>
+              <th>Recommendation</th>
+              <th>Resume Input</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             ${candidates.map(c => {
-              const initials = c.name.split(' ').map(n => n[0]).join('');
               const cached = resumeAnalysisCache[c.id];
-              const score = cached ? cached.overallScore : 0;
+              const score = cached ? cached.matchScore : 0;
               const matchClass = getMatchClass(score);
               const isAnalysed = !!cached;
+              const hasText = !!resumeTextCache[c.id];
               return `
-                <tr data-candidate-id="${c.id}" data-cid="${c.id}">
+                <tr data-candidate-id="${c.id}" data-cid="${c.id}" class="${isAnalysed ? 'ra-row-done' : ''}">
                   <td><input type="checkbox" class="table-checkbox-row" /></td>
                   <td>
                     <div class="table-candidate-cell">
-                      <span class="cand-name-link">${c.name} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
+                      <span class="cand-name-link">${c.name}</span>
                       <span class="cand-email-sub">${c.email}</span>
+                      ${isAnalysed && cached.summary ? `<span class="ra-summary-preview">${cached.summary.slice(0, 90)}${cached.summary.length > 90 ? '…' : ''}</span>` : ''}
                     </div>
                   </td>
-                  <td><span class="ra-match-pill ${matchClass}">${isAnalysed ? score + '%' : 'Pending'}</span></td>
-                  <td><span class="ra-status-badge ${isAnalysed ? 'analysed' : 'pending'}">${isAnalysed ? 'Analysed' : 'Awaiting'}</span></td>
                   <td>
-                    <input type="file" id="ra-file-${c.id}" accept=".pdf,.doc,.docx,.txt" hidden>
-                    ${isAnalysed
-                      ? `<button class="btn-ra-view-resume" data-cid="${c.id}">View Results</button>`
-                      : `<button class="btn-ra-analyse" data-cid="${c.id}" id="ra-btn-${c.id}"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Analyse</button>`
-                    }
+                    <span class="ra-match-pill ${matchClass}">${isAnalysed ? score + '%' : '—'}</span>
                   </td>
                   <td>
-                    <div style="display:flex;gap:6px;justify-content:center;">
-                      <button class="btn-stage-reject" data-candidate-id="${c.id}" style="padding:4px 8px;font-size:0.72rem;">Reject</button>
-                      <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening" style="padding:4px 8px;font-size:0.72rem;">Advance</button>
+                    ${isAnalysed ? getRecBadge(cached.recommendation) : '<span class="ra-status-badge pending">Pending</span>'}
+                  </td>
+                  <td>
+                    <div class="ra-input-cell">
+                      <input type="file" id="ra-file-${c.id}" accept=".pdf,.doc,.docx,.txt" hidden>
+                      ${isAnalysed
+                        ? `<button class="btn-ra-view-resume" data-cid="${c.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            View Report
+                          </button>`
+                        : `<div class="ra-input-group">
+                            <button class="btn-ra-upload" data-cid="${c.id}" title="Upload resume file">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                              ${hasText ? 'Replace' : 'Upload'}
+                            </button>
+                            <span class="ra-file-status ${hasText ? 'has-file' : ''}">${hasText ? 'Text loaded' : 'No file'}</span>
+                            <button class="btn-ra-analyse" data-cid="${c.id}" id="ra-btn-${c.id}">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                              Analyse
+                            </button>
+                          </div>`
+                      }
+                      ${!isAnalysed ? `<textarea id="ra-paste-${c.id}" class="ra-paste-area" placeholder="Or paste resume text here..." rows="2"></textarea>` : ''}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="ra-action-btns">
+                      <button class="btn-stage-reject" data-candidate-id="${c.id}">Reject</button>
+                      <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening">Advance</button>
                     </div>
                   </td>
                 </tr>
@@ -7077,14 +6656,9 @@ function renderResumeStagePaneForJob(candidates, job, container) {
         </table>
       </div>
       <div class="stage-table-footer">
-        <span class="table-selection-info">0 of ${candidates.length} row(s) selected.</span>
+        <span class="table-selection-info">${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} in resume analysis</span>
         <div class="table-pagination">
-          <span>Rows per page</span>
-          <select class="rows-per-page"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select>
           <span>Page 1 of 1</span>
-          <div class="pagination-btns">
-            <button disabled>&laquo;</button><button disabled>&lsaquo;</button><button disabled>&rsaquo;</button><button disabled>&raquo;</button>
-          </div>
         </div>
       </div>
     </div>
@@ -7099,38 +6673,39 @@ function bindResumeAnalysisEvents(job) {
     const fileInput = document.getElementById(`ra-file-${cid}`);
     const analyseBtn = row.querySelector('.btn-ra-analyse');
     const viewBtn = row.querySelector('.btn-ra-view-resume');
+    const uploadBtn = row.querySelector('.btn-ra-upload');
+    const pasteArea = document.getElementById(`ra-paste-${cid}`);
 
-    fileInput?.addEventListener('change', () => {
-      if (fileInput.files[0]) handleResumeFile(cid, fileInput.files[0]);
+    uploadBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput?.click();
+    });
+
+    fileInput?.addEventListener('change', async () => {
+      if (fileInput.files[0]) {
+        await handleResumeFile(cid, fileInput.files[0]);
+        const badge = row.querySelector('.ra-file-status');
+        if (badge) {
+          badge.textContent = fileInput.files[0].name;
+          badge.classList.add('has-file');
+        }
+      }
     });
 
     analyseBtn?.addEventListener('click', async () => {
-      const candidate = AppState.candidates.find(x => x.id === cid);
-      if (candidate && candidate.resumeUrl) {
-        if (!resumeTextCache[cid]) {
-          try {
-            const data = await apiFetch(`/api/jobs/applicants/${cid}/resume-text`);
-            if (data && data.text) {
-              resumeTextCache[cid] = data.text;
-            }
-          } catch (err) {
-            console.error("Failed to fetch resume text:", err);
-          }
-        }
+      const hasPaste = pasteArea && pasteArea.value.trim().length > 20;
+      const hasFile = resumeTextCache[cid];
+
+      if (!hasPaste && !hasFile) {
         runResumeAnalysis(cid, job);
-      } else {
-        fileInput?.click();
-        const handler = () => {
-          if (fileInput.files[0]) {
-            handleResumeFile(cid, fileInput.files[0]);
-            setTimeout(() => runResumeAnalysis(cid, job), 200);
-          } else {
-            runResumeAnalysis(cid, job);
-          }
-          fileInput.removeEventListener('change', handler);
-        };
-        fileInput?.addEventListener('change', handler);
+        return;
       }
+
+      if (pasteArea && pasteArea.value.trim()) {
+        const existing = resumeTextCache[cid] || '';
+        resumeTextCache[cid] = (existing + '\n' + pasteArea.value.trim()).trim();
+      }
+      runResumeAnalysis(cid, job);
     });
 
     viewBtn?.addEventListener('click', () => {
@@ -7139,29 +6714,67 @@ function bindResumeAnalysisEvents(job) {
       }
     });
   });
+
+  const analyseAllBtn = document.getElementById('btn-ra-analyse-all');
+  analyseAllBtn?.addEventListener('click', () => {
+    const pendingCids = [];
+    document.querySelectorAll('.ra-data-table tr[data-cid]').forEach(row => {
+      if (!resumeAnalysisCache[row.dataset.cid]) {
+        pendingCids.push(row.dataset.cid);
+      }
+    });
+    if (pendingCids.length === 0) {
+      showPremiumToast('All candidates already analysed.', 'info');
+      return;
+    }
+    runBulkResumeAnalysis(pendingCids, job);
+  });
 }
 
-function handleResumeFile(cid, file) {
-  const isPDF = file.name.toLowerCase().endsWith('.pdf');
+async function handleResumeFile(cid, file) {
+  const isPdfOrDocx = /\.(pdf|docx?)$/i.test(file.name);
 
-  if (isPDF) {
-    resumeTextCache[cid] = null;
-    showPremiumToast(`${file.name} loaded — PDF will use auto-generated profile.`, 'info');
+  if (isPdfOrDocx) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await fetch('/api/parse-file', { method: 'POST', body: formData });
+      if (!resp.ok) throw new Error('Parse failed');
+      const data = await resp.json();
+      if (data.text && !isGarbageText(data.text)) {
+        resumeTextCache[cid] = data.text;
+        showPremiumToast(`${file.name} parsed — ${data.text.split('\\n').length} lines extracted.`, 'success');
+      } else {
+        resumeTextCache[cid] = null;
+        showPremiumToast(`${file.name} — could not extract text, will generate profile.`, 'info');
+      }
+    } catch {
+      resumeTextCache[cid] = null;
+      showPremiumToast(`Could not parse ${file.name} — will generate candidate profile.`, 'info');
+    }
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = e => {
-    const text = e.target.result;
-    if (isGarbageText(text)) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      if (isGarbageText(text)) {
+        resumeTextCache[cid] = null;
+        showPremiumToast(`${file.name} loaded — binary content, will generate candidate profile.`, 'info');
+      } else {
+        resumeTextCache[cid] = text;
+        showPremiumToast(`${file.name} loaded — ${text.split('\\n').length} lines extracted.`, 'success');
+      }
+      resolve();
+    };
+    reader.onerror = () => {
       resumeTextCache[cid] = null;
-      showPremiumToast(`${file.name} loaded — binary file will use auto-generated profile.`, 'info');
-    } else {
-      resumeTextCache[cid] = text;
-      showPremiumToast(`${file.name} loaded successfully.`, 'success');
-    }
-  };
-  reader.readAsText(file);
+      showPremiumToast(`Could not read ${file.name} — will generate candidate profile.`, 'info');
+      resolve();
+    };
+    reader.readAsText(file);
+  });
 }
 
 function generateSyntheticResume(candidate, job) {
@@ -7243,11 +6856,38 @@ async function runResumeAnalysis(cid, job) {
     btn.innerHTML = `<span class="ra-spinner"></span> Analysing…`;
   }
 
-  const systemPrompt = `You are Lina, an expert ATS resume analyst for IntervieHire. Analyse the provided resume against the job requirements. Respond ONLY with a valid JSON object matching exactly this schema — no extra text, no markdown fences:
-{"matchScore":number,"summary":"2-3 sentence professional assessment","experienceYears":"e.g. 4 years","skills":{"detected":["skill1"],"matched":["skill1"],"missing":["skill1"]},"scorecard":{"technical":number,"experience":number,"communication":number,"cultureFit":number},"recommendation":"Advance|Hold|Reject","recommendationReason":"1 sentence reason"}
-All scorecard values 0–10. matchScore 0–100.`;
+  const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [] };
+  const criteriaBlock = criteria.mustHave.length > 0 ? `
+SCREENING CRITERIA:
+Must Have: ${criteria.mustHave.join('; ')}
+Red Flags (reject if present): ${criteria.redFlags.join('; ')}
+Good to Have (bonus): ${criteria.goodToHave.join('; ')}` : '';
 
-  const userMsg = `Job Title: ${job.cardName}\nRole: ${job.roleName}\nExperience Required: ${job.experienceBand}\nJob Description: ${job.description || '(Not provided)'}\n\n--- RESUME ---\n${resumeText.slice(0, 3500)}`;
+  const systemPrompt = `You are Lina, an expert ATS resume analyst for IntervieHire. You perform rigorous, criteria-driven resume screening.
+
+TASK: Analyse the resume against the job requirements and screening criteria. Score honestly — do NOT inflate scores. A candidate missing must-have skills should score below 50.
+
+SCORING RULES:
+- matchScore: 0–100 overall fit. Weight must-have criteria at 60%, experience at 20%, good-to-have at 20%.
+- scorecard values: 0.0–10.0 each.
+- If the resume is clearly auto-generated or lacks real detail, cap matchScore at 40 and note it.
+- recommendation: "Advance" if matchScore >= 70, "Hold" if 45-69, "Reject" if < 45.
+
+STRICT SKILL RULES:
+- "missing" must ONLY contain skills from the Must Have or Good to Have criteria that the candidate lacks. NEVER invent skills not listed in the job criteria.
+- "matched" must ONLY contain skills from the criteria that the candidate demonstrably has.
+- "detected" lists other relevant skills found in the resume (keep to top 6).
+- Do NOT hallucinate technical skills irrelevant to the role (e.g. no "Rust" for a PM role, no "database schema" unless the job asks for it).
+
+Respond ONLY with a valid JSON object — no markdown fences, no extra text:
+{"matchScore":number,"summary":"2-3 sentence assessment with specific evidence from resume","experienceYears":"e.g. 4 years","skills":{"detected":["other relevant skills from resume, max 6"],"matched":["criteria skills the candidate has"],"missing":["criteria skills the candidate lacks — ONLY from Must Have and Good to Have lists"]},"scorecard":{"technical":number,"experience":number,"communication":number,"cultureFit":number},"recommendation":"Advance|Hold|Reject","recommendationReason":"1 sentence with specific reason"}`;
+
+  const userMsg = `JOB: ${job.cardName} (${job.roleName})
+Experience Required: ${job.experienceBand}
+Description: ${job.description || '(Not provided)'}${criteriaBlock}
+
+--- CANDIDATE RESUME ---
+${resumeText.slice(0, 4000)}`;
 
   try {
     const raw = await callDeepSeekAPI(
@@ -7271,35 +6911,77 @@ All scorecard values 0–10. matchScore 0–100.`;
 
 function renderAnalysisResult(cid, result) {
   const row = document.querySelector(`tr[data-cid="${cid}"]`);
-  if (row) {
-    const scoreTd = row.querySelectorAll('td')[2];
-    const statusTd = row.querySelectorAll('td')[3];
-    const resumeTd = row.querySelectorAll('td')[4];
-    if (scoreTd) {
-      const matchClass = result.matchScore >= 75 ? 'high' : result.matchScore >= 50 ? 'medium' : 'low';
-      scoreTd.innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}%</span>`;
+  if (!row) return;
+
+  row.classList.add('ra-row-done');
+  const tds = row.querySelectorAll('td');
+
+  const matchClass = result.matchScore >= 75 ? 'high' : result.matchScore >= 50 ? 'medium' : 'low';
+  if (tds[1]) {
+    const cell = tds[1].querySelector('.table-candidate-cell');
+    if (cell && result.summary) {
+      const existing = cell.querySelector('.ra-summary-preview');
+      if (existing) existing.remove();
+      const span = document.createElement('span');
+      span.className = 'ra-summary-preview';
+      span.textContent = result.summary.slice(0, 90) + (result.summary.length > 90 ? '…' : '');
+      cell.appendChild(span);
     }
-    if (statusTd) {
-      statusTd.innerHTML = `<span class="ra-status-badge analysed">Analysed</span>`;
+  }
+  if (tds[2]) {
+    tds[2].innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}%</span>`;
+  }
+  if (tds[3]) {
+    const recCls = result.recommendation === 'Advance' ? 'high' : result.recommendation === 'Hold' ? 'medium' : 'low';
+    tds[3].innerHTML = `<span class="ra-rec-badge ${recCls}">${result.recommendation}</span>`;
+  }
+  if (tds[4]) {
+    tds[4].innerHTML = `<div class="ra-input-cell">
+      <button class="btn-ra-view-resume" data-cid="${cid}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        View Report
+      </button>
+    </div>`;
+    tds[4].querySelector('.btn-ra-view-resume')?.addEventListener('click', () => {
+      openReportDrawerForCandidate(cid);
+    });
+  }
+
+  const pendingBtns = document.querySelectorAll('.btn-ra-analyse-all, .ra-toolbar-stat.pending');
+  const remaining = document.querySelectorAll('tr[data-cid]:not(.ra-row-done)').length;
+  pendingBtns.forEach(el => {
+    if (el.classList.contains('ra-toolbar-stat')) {
+      el.textContent = `${remaining} pending`;
+    } else if (remaining === 0) {
+      el.style.display = 'none';
+    } else {
+      el.innerHTML = el.innerHTML.replace(/\(\d+\)/, `(${remaining})`);
     }
-    if (resumeTd) {
-      resumeTd.innerHTML = `<button class="btn-ra-view-resume" data-cid="${cid}">View Results</button>`;
-      resumeTd.querySelector('.btn-ra-view-resume')?.addEventListener('click', () => {
-        openReportDrawerForCandidate(cid);
-      });
-    }
+  });
+  const analysedStat = document.querySelector('.ra-toolbar-stat:not(.pending)');
+  if (analysedStat) {
+    const done = document.querySelectorAll('tr.ra-row-done').length;
+    analysedStat.textContent = `${done} analysed`;
+  }
+}
+
+async function runBulkResumeAnalysis(candidateIds, job) {
+  const pending = candidateIds.filter(id => !resumeAnalysisCache[id]);
+  if (pending.length === 0) {
+    showPremiumToast('All candidates already analysed.', 'info');
     return;
   }
-
-  const resultEl = document.getElementById(`ra-result-${cid}`);
-  const badgeEl  = document.getElementById(`badge-${cid}`);
-  if (!resultEl) return;
-
-  if (badgeEl) {
-    badgeEl.textContent = `${result.matchScore}%`;
-    const c = result.matchScore >= 75 ? '34,197,94' : result.matchScore >= 50 ? '251,191,36' : '239,68,68';
-    badgeEl.style.cssText = `background:rgba(${c},0.12);color:rgb(${c});border-color:rgba(${c},0.3);`;
+  showPremiumToast(`Analysing ${pending.length} candidate${pending.length > 1 ? 's' : ''}…`, 'info');
+  let done = 0;
+  for (const cid of pending) {
+    try {
+      await runResumeAnalysis(cid, job);
+      done++;
+    } catch {
+      showPremiumToast(`Failed to analyse candidate ${cid}, continuing…`, 'error');
+    }
   }
+  showPremiumToast(`Bulk analysis complete: ${done}/${pending.length} succeeded.`, done === pending.length ? 'success' : 'info');
 }
 
 function toggleResumeCriteriaEdit(job) {
@@ -7334,7 +7016,7 @@ function toggleResumeCriteriaEdit(job) {
         const jTitle = c.jobApplied;
         return jTitle === job.roleName || jTitle === job.cardName;
       });
-      const resumeCands = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled'));
+      const resumeCands = jobCandidates.filter(c => c.status === 'Resume');
       // trigger full re-render by calling renderJobDetailPanes
       if (typeof renderJobDetailPanes === 'function') renderJobDetailPanes(job);
     }
@@ -7343,12 +7025,7 @@ function toggleResumeCriteriaEdit(job) {
 
   // Enter edit mode
   section.classList.add('editing');
-  const criteria = job.resumeCriteria || {};
-  const mustHave = criteria.mustHave || [];
-  const redFlags = criteria.redFlags || [];
-  const goodToHave = criteria.goodToHave || [];
-  const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
-  const groupsData = { mustHave, redFlags, goodToHave };
+  const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
 
   const editBtn = document.getElementById('btn-ra-edit-criteria');
   if (editBtn) {
@@ -7359,7 +7036,7 @@ function toggleResumeCriteriaEdit(job) {
   section.querySelectorAll('.ra-criteria-items').forEach(itemsContainer => {
     const group = itemsContainer.closest('.ra-criteria-group');
     const groupType = group.classList.contains('must-have') ? 'mustHave' : group.classList.contains('red-flags') ? 'redFlags' : 'goodToHave';
-    const items = groupsData[groupType] || [];
+    const items = criteria[groupType] || [];
 
     itemsContainer.innerHTML = items.map((item, i) => `
       <div class="ra-criteria-item-edit">
@@ -7408,8 +7085,8 @@ function toggleResumeCriteriaEdit(job) {
   // Make min match editable
   const minMatchEl = section.querySelector('.ra-criteria-min-match');
   if (minMatchEl) {
-    const currentMin = goodToHaveMinMatch;
-    const totalGood = goodToHave.length;
+    const currentMin = criteria.goodToHaveMinMatch || 1;
+    const totalGood = criteria.goodToHave.length;
     minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
   }
 }
@@ -7580,22 +7257,10 @@ function renderJobDetailPanes(job) {
   // 1. Resume pane — criteria config + candidates table
   const resumeList = document.getElementById('list-stage-resume');
   if (resumeList) {
-    const resumeCands = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled'));
-    const criteria = job.resumeCriteria || {};
-    const mustHave = criteria.mustHave || [];
-    const redFlags = criteria.redFlags || [];
-    const goodToHave = criteria.goodToHave || [];
-    const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
+    const resumeCands = jobCandidates.filter(c => c.status === 'Resume');
+    const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
 
     const criteriaHTML = `
-      <div class="ra-candidates-section">
-        <div class="ra-candidates-header">
-          <h3 class="ra-candidates-title">Candidates in Resume Analysis</h3>
-          <span class="ra-candidates-count">${resumeCands.length} candidate${resumeCands.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="jd-stage-candidates-list" id="list-stage-resume-candidates"></div>
-      </div>
-
       <div class="ra-config-section">
         <div class="ra-config-header">
           <div class="ra-config-header-left">
@@ -7619,7 +7284,7 @@ function renderJobDetailPanes(job) {
             </div>
           </div>
           <div class="ra-criteria-items">
-            ${mustHave.map((item, i) => `
+            ${criteria.mustHave.map((item, i) => `
               <div class="ra-criteria-item must-have">
                 <span class="ra-criteria-num must-have">${i + 1}</span>
                 <span class="ra-criteria-text">${item}</span>
@@ -7643,7 +7308,7 @@ function renderJobDetailPanes(job) {
             </div>
           </div>
           <div class="ra-criteria-items">
-            ${redFlags.map((item, i) => `
+            ${criteria.redFlags.map((item, i) => `
               <div class="ra-criteria-item red-flags">
                 <span class="ra-criteria-num red-flags">${i + 1}</span>
                 <span class="ra-criteria-text">${item}</span>
@@ -7666,9 +7331,9 @@ function renderJobDetailPanes(job) {
               <p class="ra-criteria-group-desc">Candidates meeting the threshold will be shortlisted; others waitlisted for review.</p>
             </div>
           </div>
-          <div class="ra-criteria-min-match">Minimum match: ${goodToHaveMinMatch} out of ${goodToHave.length} criteria</div>
+          <div class="ra-criteria-min-match">Minimum match: ${criteria.goodToHaveMinMatch} out of ${criteria.goodToHave.length} criteria</div>
           <div class="ra-criteria-items">
-            ${goodToHave.map((item, i) => `
+            ${criteria.goodToHave.map((item, i) => `
               <div class="ra-criteria-item good-to-have">
                 <span class="ra-criteria-num good-to-have">${i + 1}</span>
                 <span class="ra-criteria-text">${item}</span>
@@ -7676,6 +7341,14 @@ function renderJobDetailPanes(job) {
             `).join('')}
           </div>
         </div>
+      </div>
+
+      <div class="ra-candidates-section">
+        <div class="ra-candidates-header">
+          <h3 class="ra-candidates-title">Candidates in Resume Analysis</h3>
+          <span class="ra-candidates-count">${resumeCands.length} candidate${resumeCands.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="jd-stage-candidates-list" id="list-stage-resume-candidates"></div>
       </div>
     `;
 
@@ -8054,96 +7727,44 @@ function renderJobDetailPanes(job) {
           const label = names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
           if (action === 'advance') {
             const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
-            ids.forEach(async cid => {
+            ids.forEach(cid => {
               const cand = AppState.candidates.find(c => c.id === cid);
               if (cand) {
                 const idx = stages.indexOf(cand.status);
                 if (idx < stages.length - 1) {
                   const next = stages[idx + 1];
-                  const patchData = {};
-                  if (next === 'Rejected') {
-                    patchData.remarks = 'Rejected';
-                  } else if (next === 'Hired') {
-                    patchData.remarks = 'Hired';
-                  } else if (next === 'Functional') {
-                    patchData.functional_status = 'completed';
-                    if (cand.interviewScore === null || cand.interviewScore === '—') {
-                      patchData.functional_score = Math.floor(Math.random() * 31) + 60;
-                    }
-                    patchData.cheat_probability = 'low';
-                    patchData.remarks = null;
-                  } else if (next === 'Screening') {
-                    patchData.screening_status = 'completed';
-                    if (cand.interviewScore === null || cand.interviewScore === '—') {
-                      patchData.screening_score = Math.floor(Math.random() * 31) + 60;
-                    }
-                    patchData.functional_status = null;
-                    patchData.remarks = null;
-                  }
-                  try {
-                    await apiFetch(`/api/jobs/applicants/${cid}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(patchData)
-                    });
-                  } catch (err) {
-                    console.error("Failed to advance candidate:", cid, err);
+                  cand.status = next;
+                  if ((next === 'Screening' || next === 'Functional') && cand.interviewScore == null) {
+                    cand.interviewStatus = 'Completed';
+                    cand.interviewScore = Math.floor(Math.random() * 31) + 60;
+                    if (!cand.cheatProbability) cand.cheatProbability = 'Low';
                   }
                 }
               }
             });
-            setTimeout(async () => {
-              await loadStateFromBackend();
-              showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
-            }, 500);
+            saveStateToLocalStorage();
+            renderJobDetailPanes(job);
+            showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
           } else if (action === 'reject') {
-            ids.forEach(async cid => {
-              try {
-                await apiFetch(`/api/jobs/applicants/${cid}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ remarks: 'Rejected' })
-                });
-              } catch (err) {
-                console.error("Failed to reject candidate:", cid, err);
-              }
+            ids.forEach(cid => {
+              const cand = AppState.candidates.find(c => c.id === cid);
+              if (cand) cand.status = 'Rejected';
             });
-            setTimeout(async () => {
-              await loadStateFromBackend();
-              showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
-            }, 500);
+            saveStateToLocalStorage();
+            renderJobDetailPanes(job);
+            showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
           } else if (action === 'schedule' || action === 'reschedule') {
             openScheduleModal(label, action, (date, time) => {
-              const isoDateTime = new Date(`${date}T${time}`).toISOString();
-              ids.forEach(async cid => {
+              ids.forEach(cid => {
                 const cand = AppState.candidates.find(c => c.id === cid);
                 if (cand) {
-                  const patchData = {};
-                  const isFunctional = cand.status === 'Functional';
-                  const statusVal = action === 'reschedule' ? 'incomplete' : 'scheduled';
-                  
-                  if (isFunctional) {
-                    patchData.functional_status = statusVal;
-                  } else {
-                    patchData.screening_status = statusVal;
-                  }
-                  patchData.attempted_at = isoDateTime;
-
-                  try {
-                    await apiFetch(`/api/jobs/applicants/${cid}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(patchData)
-                    });
-                  } catch (err) {
-                    console.error("Failed to schedule candidate:", cid, err);
-                  }
+                  cand.attemptedAt = `${date} ${time}`;
+                  cand.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
                 }
               });
-              setTimeout(async () => {
-                await loadStateFromBackend();
-                showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) to ${date} at ${time}.`, 'success');
-              }, 500);
+              saveStateToLocalStorage();
+              renderJobDetailPanes(job);
+              showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) to ${date} at ${time}.`, 'success');
             });
           } else if (action === 'export') {
             triggerExcelExport('candidates');
@@ -8171,37 +7792,13 @@ function renderJobDetailPanes(job) {
         const name = btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
         const mode = btn.classList.contains('btn-reschedule') ? 'reschedule' : 'schedule';
         const candId = btn.getAttribute('data-candidate-id');
-        openScheduleModal(name, mode, async (date, time) => {
+        openScheduleModal(name, mode, (date, time) => {
           const cand = AppState.candidates.find(c => c.id === candId);
           if (cand) {
-            const isoDateTime = new Date(`${date}T${time}`).toISOString();
-            const patchData = {};
-            const isFunctional = cand.status === 'Functional';
-            const statusVal = mode === 'reschedule' ? 'incomplete' : 'scheduled';
-            
-            if (isFunctional) {
-              patchData.functional_status = statusVal;
-            } else {
-              patchData.screening_status = statusVal;
-            }
-            patchData.attempted_at = isoDateTime;
-
-            try {
-              const updated = await apiFetch(`/api/jobs/applicants/${candId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(patchData)
-              });
-              if (updated) {
-                await loadStateFromBackend();
-                showPremiumToast(`${mode === 'schedule' ? 'Scheduled' : 'Rescheduled'} candidate to ${date} at ${time}.`, 'success');
-              } else {
-                throw new Error("Failed to schedule candidate");
-              }
-            } catch (err) {
-              console.error("Failed to schedule candidate:", err);
-              showPremiumToast(`Error: ${err.message}`, "error");
-            }
+            cand.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
+            cand.attemptedAt = `${date} ${time}`;
+            saveStateToLocalStorage();
+            renderJobDetailPanes(job);
           }
         });
       });
@@ -8260,61 +7857,58 @@ function renderJobDetailPanes(job) {
   renderQuestionsPane(job);
 }
 
-async function updateCandidateStatus(candId, newStatus) {
+function updateCandidateStatus(candId, newStatus) {
   const candidate = AppState.candidates.find(c => c.id === candId);
   if (!candidate) return;
+  
+  const oldStatus = candidate.status;
+  candidate.status = newStatus;
 
-  const patchData = {};
-  if (newStatus === 'Rejected') {
-    patchData.remarks = 'Rejected';
-  } else if (newStatus === 'Hired') {
-    patchData.remarks = 'Hired';
-  } else if (newStatus === 'Functional') {
-    patchData.functional_status = 'completed';
-    if (candidate.interviewScore === null || candidate.interviewScore === '—') {
-      patchData.functional_score = Math.floor(Math.random() * 31) + 60;
-    }
-    patchData.cheat_probability = 'low';
-    patchData.remarks = null;
-  } else if (newStatus === 'Screening') {
-    patchData.screening_status = 'completed';
-    if (candidate.interviewScore === null || candidate.interviewScore === '—') {
-      patchData.screening_score = Math.floor(Math.random() * 31) + 60;
-    }
-    patchData.functional_status = null;
-    patchData.remarks = null;
-  } else if (newStatus === 'Resume') {
-    patchData.screening_status = null;
-    patchData.functional_status = null;
-    patchData.remarks = null;
+  if ((newStatus === 'Screening' || newStatus === 'Functional') && candidate.interviewScore == null) {
+    candidate.interviewStatus = 'Completed';
+    candidate.interviewScore = Math.floor(Math.random() * 31) + 60;
+    if (!candidate.cheatProbability) candidate.cheatProbability = 'Low';
   }
 
-  try {
-    const updated = await apiFetch(`/api/jobs/applicants/${candId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patchData)
-    });
+  if (newStatus === 'Rejected') {
+    showPremiumToast(`${candidate.name} has been rejected from the pipeline.`, 'success');
+    soundEngine.playChime([392, 293.66], 0.2, 0.1);
+  } else if (newStatus === 'Hired') {
+    showPremiumToast(`Congratulations! ${candidate.name} has been marked as Hired.`, 'success');
+    soundEngine.playChime([523.25, 659.25, 783.99, 1046.50], 0.25, 0.08);
+  } else {
+    showPremiumToast(`${candidate.name} advanced to ${newStatus}.`, 'success');
+    soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
+  }
+  
+  recalculateJobPipelines();
+  updateSummaryMetrics();
+  renderAnalyticsTable();
+  
+  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  if (activeJob) {
+    document.getElementById('jd-count-screening').textContent = activeJob.pipeline.screening;
+    const funcLabel = activeJob.pipeline.screening > 0
+      ? `${activeJob.pipeline.functional} of ${activeJob.pipeline.screening}`
+      : activeJob.pipeline.functional;
+    document.getElementById('jd-count-functional').textContent = funcLabel;
+    
+    renderFunnelStages(activeJob);
+    renderFunnelInsights(activeJob);
+    
+    const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
+      c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName
+    );
+    drawFunnelSVG(activeJob, jobCandidates);
+    drawScoreDistributionSVG(activeJob, jobCandidates);
 
-    if (updated) {
-      await loadStateFromBackend();
-
-      if (newStatus === 'Rejected') {
-        showPremiumToast(`${candidate.name} has been rejected from the pipeline.`, 'success');
-        soundEngine.playChime([392, 293.66], 0.2, 0.1);
-      } else if (newStatus === 'Hired') {
-        showPremiumToast(`Congratulations! ${candidate.name} has been marked as Hired.`, 'success');
-        soundEngine.playChime([523.25, 659.25, 783.99, 1046.50], 0.25, 0.08);
-      } else {
-        showPremiumToast(`${candidate.name} advanced to ${newStatus}.`, 'success');
-        soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
-      }
-    } else {
-      throw new Error("Failed to update candidate status");
-    }
-  } catch (e) {
-    console.error("Failed to update candidate status:", e);
-    showPremiumToast(`Error: ${e.message}`, "error");
+    renderJobDetailPanes(activeJob);
+  }
+  
+  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+    renderKanbanBoard();
+  } else {
+    renderJobCards();
   }
 }
 
@@ -8402,410 +7996,118 @@ function toggleCardPlayer(id) {
 
 let currentStagedQuestions = [];
 
-let socket = null;
-let wsReconnectTimeout = null;
-
-async function apiFetch(url, options = {}) {
-  // Always include credentials so the auth cookie is sent with every request
-  const res = await fetch(url, { credentials: 'include', ...options });
-  if (!res.ok) {
-    let errorDetail = '';
-    try {
-      const data = await res.json();
-      errorDetail = data.detail || res.statusText;
-    } catch (e) {
-      errorDetail = res.statusText;
-    }
-    throw new Error(errorDetail);
-  }
-  try {
-    return await res.json();
-  } catch (e) {
-    return null;
-  }
-}
-
-function formatAttemptedAt(isoStr) {
-  if (!isoStr) return null;
-  try {
-    const d = new Date(isoStr);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const hour = d.getHours();
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const h = hour % 12 || 12;
-    const m = d.getMinutes().toString().padStart(2, '0');
-    const day = d.getDate();
-    const y = d.getFullYear();
-    return `${months[d.getMonth()]} ${day.toString().padStart(2, '0')}, ${y} ${h.toString().padStart(2, '0')}:${m} ${ampm}`;
-  } catch(e) {
-    return null;
-  }
-}
-
-async function syncJobParametersInBackend(job) {
-  try {
-    const topics = [
-      {
-        name: "AI Generated Vetting Rubric",
-        type: "Theoretical",
-        difficulty: "Medium",
-        questions: job.questions ? job.questions.map(q => q.question || q.text || '') : []
-      }
-    ];
-    const data = {
-      functional_parameters: { topics }
-    };
-    if (job.resumeCriteria) {
-      data.resume_parameters = job.resumeCriteria;
-    }
-    if (job.screeningParams) {
-      const screening_parameters = {};
-      job.screeningParams.forEach(cat => {
-        const backendCat = cat.category.toLowerCase();
-        screening_parameters[backendCat] = (cat.params || []).map(p => ({
-          parameter: p.name,
-          preferred_response: p.preferredResponse,
-          required: p.required ?? false,
-          flexibility: p.flexibility || ''
-        }));
-      });
-      data.screening_parameters = screening_parameters;
-    }
-    await apiFetch(`/api/jobs/${job.id}/parameters`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-  } catch (e) {
-    console.error("Failed to sync job parameters to backend:", e);
-  }
-}
-
-async function syncJobSettingsInBackend(job) {
-  try {
-    const data = {
-      description: job.description
-    };
-    if (job.pipelineConfig) {
-      data.resume_analysis_enabled = job.pipelineConfig.resumeAnalysis?.enabled ?? false;
-      data.recruiter_screening_enabled = job.pipelineConfig.recruiterScreening?.enabled ?? false;
-      data.functional_interview_enabled = job.pipelineConfig.functionalInterview?.enabled ?? false;
-    }
-    await apiFetch(`/api/jobs/${job.id}/settings`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-  } catch (e) {
-    console.error("Failed to sync job settings to backend:", e);
-  }
-}
-
-function saveStateToLocalStorage(jobToSync = null) {
+function saveStateToLocalStorage() {
   localStorage.setItem('IntervieHire_jobs_state', JSON.stringify(AppState.jobs));
-  const job = jobToSync || (AppState.activeJobId ? AppState.jobs.find(j => j.id === AppState.activeJobId) : null);
-  if (job) {
-    syncJobParametersInBackend(job);
-    syncJobSettingsInBackend(job);
-  }
 }
 
-async function loadStateFromBackend() {
+function loadStateFromLocalStorage() {
+  const saved = localStorage.getItem('IntervieHire_jobs_state');
+  if (!saved) {
+    saveStateToLocalStorage();
+    return;
+  }
+  
   try {
-    // Fetch Organisation settings
-    try {
-      const org = await apiFetch('/api/organisation');
-      const subdomainEl = document.getElementById('career-subdomain');
-      const introEl = document.getElementById('career-intro');
-      const domainVal = org?.domain || 'devasri-tech';
-      const descVal = org?.description || 'Build the future of technology with us.';
-      if (subdomainEl) subdomainEl.value = domainVal;
-      if (introEl) introEl.value = descVal;
-      const statusLink = document.querySelector('.status-link');
-      if (statusLink) {
-        statusLink.textContent = `interviehire.com/careers/${domainVal} ↗`;
-        statusLink.href = `https://interviehire.com/careers/${domainVal}`;
-      }
-    } catch (e) {
-      console.warn("Failed to load organisation from backend, falling back to defaults", e);
-      const subdomainEl = document.getElementById('career-subdomain');
-      const introEl = document.getElementById('career-intro');
-      if (subdomainEl) subdomainEl.value = 'devasri-tech';
-      if (introEl) introEl.value = 'Build the future of technology with us.';
-      const statusLink = document.querySelector('.status-link');
-      if (statusLink) {
-        statusLink.textContent = `interviehire.com/careers/devasri-tech ↗`;
-        statusLink.href = `https://interviehire.com/careers/devasri-tech`;
-      }
-    }
-
-    // Fetch Team members
-    try {
-      const teamData = await apiFetch('/api/team');
-      if (teamData && teamData.members) {
-        AppState.team = teamData.members.map(m => ({
-          id: String(m.id),
-          name: m.name,
-          email: m.email,
-          designation: m.designation || 'Member',
-          usertype: m.user_type === 'org_admin' ? 'Org. Admin' : 'Recruiter',
-          registeredOn: m.registered_on ? new Date(m.registered_on).toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'Recently',
-          status: m.status === 'active' ? 'Active' : m.status === 'invited' ? 'Invited' : 'Inactive'
-        }));
-      }
-    } catch (e) {
-      console.warn("Failed to load team from backend", e);
-    }
-
-    // Fetch Jobs
-    const jobsData = await apiFetch('/api/jobs');
-    if (jobsData && jobsData.jobs) {
-      AppState.jobs = jobsData.jobs.map(j => {
-        const createdDate = j.created_at ? new Date(j.created_at).toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'Recently';
-        let questionsList = [];
-        if (j.functional_parameters && j.functional_parameters.topics) {
-          j.functional_parameters.topics.forEach((topic, tIdx) => {
-            if (topic.questions) {
-              topic.questions.forEach((qText, qIdx) => {
-                questionsList.push({
-                  id: `q-db-${j.id}-${tIdx}-${qIdx}`,
-                  type: topic.type ? topic.type.toLowerCase() : 'technical',
-                  question: qText,
-                  difficulty: topic.difficulty ? topic.difficulty.toLowerCase() : 'intermediate',
-                  rubric: topic.name || 'Core competency rubric.',
-                  follow_ups: []
-                });
-              });
-            }
-          });
-        }
-        const jResume = j.resume_parameters || {};
-        const criteria = {
-          mustHave: jResume.mustHave || jResume.must_have || [],
-          redFlags: jResume.redFlags || jResume.red_flags || [],
-          goodToHave: jResume.goodToHave || jResume.good_to_have || [],
-          goodToHaveMinMatch: jResume.goodToHaveMinMatch ?? 1
-        };
-        if (!Array.isArray(criteria.mustHave)) criteria.mustHave = [];
-        if (!Array.isArray(criteria.redFlags)) criteria.redFlags = [];
-        if (!Array.isArray(criteria.goodToHave)) criteria.goodToHave = [];
-
-        let screeningParams = [
-          { category: 'Experience', params: [
-            { name: 'Total Experience', required: false, flexibility: '', preferredResponse: '3+ Years' },
-            { name: 'Relevant Experience', required: false, flexibility: '', preferredResponse: '2+ Years' }
-          ]},
-          { category: 'Location', params: [
-            { name: 'Current Location', required: true, flexibility: '', preferredResponse: 'Mumbai/Pune/Remote' },
-            { name: 'Ready to relocate', required: false, flexibility: '', preferredResponse: 'Yes' }
-          ]},
-          { category: 'Compensation', params: [
-            { name: 'Current CTC', required: true, flexibility: '', preferredResponse: 'Market competitive' },
-            { name: 'Expected CTC', required: true, flexibility: '', preferredResponse: 'Within budget' }
-          ]}
-        ];
-        if (j.screening_parameters) {
-          screeningParams = [];
-          for (const [cat, paramsList] of Object.entries(j.screening_parameters)) {
-            const capitalizedCat = cat.charAt(0).toUpperCase() + cat.slice(1);
-            const params = (paramsList || []).map(p => ({
-              name: p.parameter || p.name || '',
-              preferredResponse: p.preferred_response || p.preferredResponse || '',
-              required: p.required ?? false,
-              flexibility: p.flexibility || ''
-            }));
-            screeningParams.push({ category: capitalizedCat, params });
-          }
-        }
-
-        return {
-          id: String(j.id),
-          roleName: j.role_name,
-          cardName: j.title,
-          created: createdDate,
-          status: j.status,
-          customJobId: j.custom_job_id || '-',
-          tags: j.tags || [],
-          experienceBand: j.experience_band || 'Upto 2 Years',
-          createdBy: j.created_by_name || 'Devasri',
-          description: j.description || '',
-          pipeline: {
-            total: j.pipeline.total || 0,
-            resume: j.pipeline.resume || 0,
-            screening: j.pipeline.screening || 0,
-            functional: j.pipeline.functional || 0
-          },
-          pipelineConfig: {
-            careerPage: { enabled: true, listed: j.is_job_listed ?? false },
-            resumeAnalysis: { enabled: j.resume_analysis_enabled ?? true },
-            recruiterScreening: { enabled: j.recruiter_screening_enabled ?? true },
-            functionalInterview: { enabled: j.functional_interview_enabled ?? true }
-          },
-          questions: questionsList,
-          resumeCriteria: criteria,
-          screeningParams: screeningParams
-        };
-      });
-    }
-
-    // Fetch Candidates
-    const candidatesData = await apiFetch('/api/usage/candidates-table');
-    if (candidatesData) {
-      const sourceMap = {
-        'career_page': 'Career Page',
-        'bulk_upload': 'Bulk Upload',
-        'direct_link': 'Direct Link',
-        'scheduled': 'Scheduled',
-        'ats': 'ATS'
-      };
-      const statusMap = {
-        'pending': 'Pending',
-        'scheduled': 'Scheduled',
-        'completed': 'Completed',
-        'slot_missed': 'Slot Missed',
-        'incomplete': 'Incomplete'
-      };
-      const cheatMap = {
-        'low': 'Low',
-        'medium': 'Medium',
-        'high': 'High'
-      };
-
-      AppState.candidates = candidatesData.map(c => {
-        let status = 'Resume';
-        if (c.remarks === 'Rejected') {
-          status = 'Rejected';
-        } else if (c.remarks === 'Hired') {
-          status = 'Hired';
-        } else if (c.functional_status) {
-          status = 'Functional';
-        } else if (c.screening_status) {
-          status = 'Screening';
-        }
-        
-        let score = '—';
-        if (c.functional_score !== null) {
-          score = `${c.functional_score}%`;
-        } else if (c.screening_score !== null) {
-          score = `${c.screening_score}%`;
-        }
-
-        const job = AppState.jobs.find(j => j.id === c.job_id);
-        const jobApplied = job ? job.roleName : 'General Position';
-
-        let interviewStatus = 'Pending';
-        if (status === 'Functional' && c.functional_status) {
-          interviewStatus = statusMap[c.functional_status] || 'Pending';
-        } else if (status === 'Screening' && c.screening_status) {
-          interviewStatus = statusMap[c.screening_status] || 'Pending';
-        }
-
-        return {
-          id: String(c.id),
-          name: c.name,
-          email: c.email,
-          phone: c.phone || '—',
-          source: sourceMap[c.source] || c.source || 'Direct Link',
-          jobApplied: jobApplied,
-          jobId: job ? String(job.id) : null,
-          status: status,
-          score: score,
-          registeredOn: c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:00 AM' : 'Recently',
-          attemptedAt: formatAttemptedAt(c.attempted_at),
-          interviewStatus: interviewStatus,
-          cheatProbability: c.cheat_probability ? (cheatMap[c.cheat_probability] || 'Low') : null,
-          interviewScore: c.functional_score !== null ? c.functional_score : (c.screening_score !== null ? c.screening_score : null),
-          recruiterScreening: c.recruiter_screening,
-          recruiterScreeningScore: c.recruiter_screening_score,
-          resumeUrl: c.resume_url || null,
-          resumeAnalysed: c.resume_analysed || false
-        };
-      });
-    }
-
-    // Fetch Usage Stats
-    try {
-      AppState.stats = await apiFetch('/api/usage/stats');
-    } catch (e) {
-      console.warn("Failed to load usage stats from backend", e);
-      AppState.stats = null;
-    }
-
-    recalculateJobPipelines();
-    updateSummaryMetrics();
-    const isBoard = document.getElementById('btn-view-board')?.classList.contains('active');
-    if (isBoard) {
-      renderKanbanBoard();
-    } else {
-      renderJobCards();
-    }
-    renderAnalyticsTable();
-    renderTeamTable();
-  } catch (e) {
-    console.warn("Critical error loading state from backend:", e);
-    showPremiumToast("Backend database connection failed. Running in offline/mock mode.", "error");
-  }
-}
-
-function connectWebSocket() {
-  if (wsReconnectTimeout) {
-    clearTimeout(wsReconnectTimeout);
-    wsReconnectTimeout = null;
-  }
-  if (socket) {
-    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+    const parsedJobs = JSON.parse(saved);
+    if (!Array.isArray(parsedJobs) || parsedJobs.length === 0) {
+      saveStateToLocalStorage();
       return;
     }
-    socket.onclose = null;
-    socket.onerror = null;
-    socket.onmessage = null;
-    socket.onopen = null;
-    try { socket.close(); } catch(e) {}
-    socket = null;
+    
+    // Replace AppState.jobs with parsed jobs from localStorage, ensuring all properties are defined with fallbacks
+    AppState.jobs = parsedJobs.map(pj => {
+      // Find hardcoded defaults for pipeline or questions if missing
+      const hardcodedDefault = pj.id === 'AKRO62EF45E26EA1' ? {
+        description: "We are seeking a detail-oriented Government Tender & Proposal Executive to manage and lead the preparation, review, and submission of bids, tenders, and proposals for public sector opportunities. Key duties include analyzing RFP guidelines, checking compliance matrices, and writing clear technical and operational responses.",
+        experienceBand: "Upto 2 Years",
+        roleName: "Government Tender & Proposal Executive",
+        cardName: "Government Tender & Proposal Executive..",
+        createdBy: "Devasri",
+        pipeline: { total: 3, resume: 0, screening: 2, functional: 1 },
+        questions: [
+          {
+            id: 'q-prop-1',
+            type: 'technical',
+            question: "Explain the process of drafting a government RFP response. What are the key compliance elements you verify before submission?",
+            difficulty: 'intermediate',
+            rubric: "Identifies compliance checklists, standard submission formats, and verification protocols.",
+            follow_ups: ["How do you handle late updates to tender guidelines?", "What tools do you use for tracking deadline milestones?"]
+          },
+          {
+            id: 'q-prop-2',
+            type: 'behavioral',
+            question: "Describe a time when you had to meet an extremely tight deadline for a critical proposal. How did you organize your tasks?",
+            difficulty: 'beginner',
+            rubric: "Mentions prioritization, time management, keeping key stakeholders aligned, and maintaining accuracy under pressure.",
+            follow_ups: ["Did you make any errors in that rush?", "What would you do differently next time?"]
+          },
+          {
+            id: 'q-prop-3',
+            type: 'situational',
+            question: "A key subject matter expert (SME) fails to deliver their input 2 hours before a tender submission deadline. How do you handle this?",
+            difficulty: 'advanced',
+            rubric: "Proposes logical mitigation strategies like escalation plans, using boilerplate content, or direct intervention to secure crucial technical details.",
+            follow_ups: ["How do you prevent this issue in advance?", "How do you communicate the emergency to leadership?"]
+          }
+        ]
+      } : pj.id === 'AKRO62EF45E26DF5' ? {
+        description: "We are hiring a Full Stack Developer to design, build, and support high-performance web applications. You will work with React on the frontend, Node.js and Express on the backend, and PostgreSQL for storage. Responsibilities include building responsive dashboards, optimizing latency, and ensuring data consistency across endpoints.",
+        experienceBand: "1-4 Years",
+        roleName: "Full Stack Developer",
+        cardName: "Full Stack Developer Hiring - Demo",
+        createdBy: "Devasri",
+        pipeline: { total: 1, resume: 0, screening: 0, functional: 1 },
+        questions: [
+          {
+            id: 'q-dev-1',
+            type: 'technical',
+            question: "Describe the differences between optimistic UI updates and pessimistic UI updates. When would you use each?",
+            difficulty: 'intermediate',
+            rubric: "Explains user experience vs data consistency, error handling, and rollback logic in state managers.",
+            follow_ups: ["How do you handle temporary network failures?", "Can you describe a scenario where optimistic updates fail badly?"]
+          },
+          {
+            id: 'q-dev-2',
+            type: 'behavioral',
+            question: "Tell me about a time you had a technical disagreement with a team lead or colleague. How was it resolved?",
+            difficulty: 'beginner',
+            rubric: "Highlights constructive communication, presenting data-backed arguments, testing hypotheses, and committing to the final team decision.",
+            follow_ups: ["What did you learn from their perspective?", "Did it affect your working relationship afterwards?"]
+          },
+          {
+            id: 'q-dev-3',
+            type: 'situational',
+            question: "We are experiencing a sudden spike in database read latency during peak hours. Walk me through your debugging steps.",
+            difficulty: 'advanced',
+            rubric: "Mentions slow query logs, connection pools, indexing, caching layers (Redis), replica scaling, and server utilization checks.",
+            follow_ups: ["How would you explain the downtime to a non-technical manager?", "What long-term safeguards would you set up?"]
+          }
+        ]
+      } : null;
+
+      const fallbackPipeline = hardcodedDefault ? hardcodedDefault.pipeline : { total: 0, resume: 0, screening: 0, functional: 0 };
+      const fallbackDesc = hardcodedDefault ? hardcodedDefault.description : "No job description provided.";
+      const fallbackQuestions = hardcodedDefault ? hardcodedDefault.questions : [];
+      
+      return {
+        id: pj.id || generateJobId(),
+        roleName: pj.roleName || (hardcodedDefault ? hardcodedDefault.roleName : 'Untitled Role'),
+        cardName: pj.cardName || pj.roleName || (hardcodedDefault ? hardcodedDefault.cardName : 'Untitled Job'),
+        created: pj.created || 'Recently',
+        status: pj.status || 'published',
+        customJobId: pj.customJobId || '-',
+        experienceBand: pj.experienceBand || (hardcodedDefault ? hardcodedDefault.experienceBand : 'Upto 2 Years'),
+        createdBy: pj.createdBy || (hardcodedDefault ? hardcodedDefault.createdBy : 'Devasri'),
+        description: pj.description || fallbackDesc,
+        questions: pj.questions || fallbackQuestions,
+        pipeline: pj.pipeline || fallbackPipeline
+      };
+    });
+  } catch (e) {
+    console.error("Error loading jobs from localStorage", e);
+    // If corrupt, save fresh hardcoded defaults
+    saveStateToLocalStorage();
   }
-
-  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsHost = (window.location.host === 'localhost:3000' || window.location.host === '127.0.0.1:3000') ? '127.0.0.1:8000' : window.location.host;
-  const wsUrl = `${wsProto}//${wsHost}/ws`;
-  
-  console.log(`Connecting to WebSocket at ${wsUrl}...`);
-  socket = new WebSocket(wsUrl);
-  
-  socket.onopen = () => {
-    console.log("WebSocket connected.");
-    appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] System:</code> Connected to live WebSocket server at ${wsUrl}`);
-  };
-  
-  socket.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'candidate_update') {
-        appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Event:</code> ${msg.content}`, 'font-gold');
-        loadStateFromBackend();
-      } else if (msg.type === 'welcome') {
-        appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] Welcome:</code> ${msg.content}`);
-      } else if (msg.type === 'echo' || msg.type === 'broadcast') {
-        appendTerminalLog(`<code>[${new Date().toLocaleTimeString()}] ${msg.sender || 'Echo'}:</code> ${msg.content}`);
-      }
-    } catch (e) {
-      console.error("Failed to parse WebSocket message:", e);
-    }
-  };
-  
-  socket.onclose = () => {
-    console.log("WebSocket disconnected. Retrying in 5 seconds...");
-    wsReconnectTimeout = setTimeout(connectWebSocket, 5000);
-  };
-  
-  socket.onerror = (err) => {
-    console.warn("WebSocket error:", err);
-  };
-}
-
-async function loadStateFromLocalStorage() {
-  await loadStateFromBackend();
-  connectWebSocket();
-  handleInitialRouting();
 }
 
 async function callDeepSeekAPI(messages, jsonMode = false) {
@@ -8847,6 +8149,125 @@ function sanitizeJSONResponse(text) {
     cleaned = cleaned.substring(0, cleaned.length - 3);
   }
   return cleaned.trim();
+}
+
+async function enrichJobWithAI(job, jdText) {
+  const descriptionText = jdText || job.description || '';
+  if (!descriptionText.trim()) return;
+
+  const criteriaPrompt = `You are an expert HR analyst. Given a job description, extract structured resume screening criteria and recruiter screening parameters.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "resumeCriteria": {
+    "mustHave": ["3-5 strings: essential skills/experience the candidate MUST demonstrate"],
+    "redFlags": ["3-5 strings: disqualifying traits or gaps that should reject a candidate"],
+    "goodToHave": ["3-5 strings: bonus qualifications that strengthen a candidate"],
+    "goodToHaveMinMatch": 1
+  },
+  "screeningParams": [
+    { "category": "Experience", "params": [
+      { "name": "Total Experience", "required": true, "flexibility": "", "preferredResponse": "specific requirement" },
+      { "name": "Relevant Experience", "required": true, "flexibility": "", "preferredResponse": "specific requirement" }
+    ]},
+    { "category": "Location", "params": [
+      { "name": "Current Location", "required": false, "flexibility": "", "preferredResponse": "Remote or flexible" },
+      { "name": "Ready to relocate", "required": false, "flexibility": "", "preferredResponse": "Flexible" }
+    ]},
+    { "category": "Compensation", "params": [
+      { "name": "Current CTC", "required": false, "flexibility": "", "preferredResponse": "Market rate" },
+      { "name": "Expected CTC", "required": false, "flexibility": "", "preferredResponse": "Competitive" }
+    ]},
+    { "category": "Availability", "params": [
+      { "name": "Notice Period", "required": true, "flexibility": "", "preferredResponse": "30 days or less" }
+    ]}
+  ]
+}
+
+Tailor every field specifically to the role. Do not use generic placeholders.`;
+
+  const questionsPrompt = `You are a senior technical interviewer. Given a job description, generate 5 high-quality interview questions.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "questions": [
+    {
+      "id": "q-gen-1",
+      "type": "technical OR behavioral OR situational",
+      "question": "the interview question text",
+      "difficulty": "beginner OR intermediate OR advanced",
+      "rubric": "what a strong answer should demonstrate",
+      "follow_ups": ["follow-up question 1", "follow-up question 2"]
+    }
+  ]
+}
+
+Rules:
+- Generate exactly 5 questions: 2 technical, 2 behavioral, 1 situational
+- Vary difficulty: 1 beginner, 3 intermediate, 1 advanced
+- Each question must have exactly 2 follow-ups
+- Tailor every question specifically to the role described
+- Use ids: q-gen-1 through q-gen-5`;
+
+  const truncatedJD = descriptionText.slice(0, 2500);
+
+  const [criteriaResult, questionsResult] = await Promise.allSettled([
+    callDeepSeekAPI([
+      { role: 'system', content: criteriaPrompt },
+      { role: 'user', content: `Job Description:\n\n${truncatedJD}` }
+    ], true),
+    callDeepSeekAPI([
+      { role: 'system', content: questionsPrompt },
+      { role: 'user', content: `Job Description:\n\n${truncatedJD}` }
+    ], true)
+  ]);
+
+  if (criteriaResult.status === 'fulfilled') {
+    try {
+      const parsed = JSON.parse(sanitizeJSONResponse(criteriaResult.value));
+      if (parsed.resumeCriteria) {
+        job.resumeCriteria = {
+          mustHave: parsed.resumeCriteria.mustHave || [],
+          redFlags: parsed.resumeCriteria.redFlags || [],
+          goodToHave: parsed.resumeCriteria.goodToHave || [],
+          goodToHaveMinMatch: parsed.resumeCriteria.goodToHaveMinMatch || 1
+        };
+      }
+      if (parsed.screeningParams && Array.isArray(parsed.screeningParams)) {
+        job.screeningParams = parsed.screeningParams;
+      }
+    } catch (e) {
+      console.error('Failed to parse criteria response:', e);
+    }
+  }
+
+  if (questionsResult.status === 'fulfilled') {
+    try {
+      const parsed = JSON.parse(sanitizeJSONResponse(questionsResult.value));
+      if (parsed.questions && Array.isArray(parsed.questions)) {
+        job.questions = parsed.questions;
+      }
+    } catch (e) {
+      console.error('Failed to parse questions response:', e);
+    }
+  }
+
+  if (!job.pipelineConfig) {
+    job.pipelineConfig = {
+      careerPage: { enabled: true, listed: true },
+      resumeAnalysis: { enabled: true },
+      recruiterScreening: { enabled: true },
+      functionalInterview: { enabled: true }
+    };
+  } else {
+    if (job.resumeCriteria) job.pipelineConfig.resumeAnalysis = { enabled: true };
+    if (job.screeningParams) job.pipelineConfig.recruiterScreening = { enabled: true };
+    if (job.questions?.length) job.pipelineConfig.functionalInterview = { enabled: true };
+  }
+
+  job.applicationFields = job.applicationFields || ['Current Location', 'Expected CTC', 'Notice Period'];
+
+  saveStateToLocalStorage();
 }
 
 // Render the Questions Pane for a specific job
@@ -9846,12 +9267,12 @@ function initCrystalAnimations() {
       });
       themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
       
-      const startTime = performance.now();
+      const clock = new THREE.Clock();
       
       function renderShader() {
         requestAnimationFrame(renderShader);
         
-        uniforms.u_time.value = (performance.now() - startTime) / 1000;
+        uniforms.u_time.value = clock.getElapsedTime();
         
         // Easing interpolation for mouse slide inertia
         targetMouseX += (mouseX - targetMouseX) * 0.05;
@@ -10002,19 +9423,6 @@ function initCrystalAnimations() {
     });
     activeObservers.clear();
 
-    if (wsReconnectTimeout) {
-      clearTimeout(wsReconnectTimeout);
-      wsReconnectTimeout = null;
-    }
-    if (socket) {
-      socket.onclose = null;
-      socket.onerror = null;
-      socket.onmessage = null;
-      socket.onopen = null;
-      try { socket.close(); } catch(e) {}
-      socket = null;
-    }
-
     // Clean up window attachments to avoid memory leaks or cross-page pollution
     delete window.navigateToJobDetail;
     delete window.openJobFlowView;
@@ -10023,7 +9431,6 @@ function initCrystalAnimations() {
     delete window.handleJobKebab;
     delete window.navigateToSourcing;
     delete window.removeCandidateFromQueue;
-    delete window.openEditJobModal;
   };
 }
 

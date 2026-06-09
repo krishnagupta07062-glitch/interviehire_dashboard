@@ -96,6 +96,7 @@ class JobOut(BaseModel):
     role_name: str
     status: JobStatus
     experience_band: Optional[str]
+    description: Optional[str] = None
     is_job_listed: bool
     created_at: datetime
     created_by_name: Optional[str]

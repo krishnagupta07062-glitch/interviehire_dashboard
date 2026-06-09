@@ -151,6 +151,19 @@ def create_job(
     return _build_job_out(new_job, db)
 
 
+def clean_and_parse_json(text: str) -> dict:
+    """Cleans markdown wrappers, leading/trailing non-JSON text, then parses it."""
+    import re
+    import json
+    text = text.strip()
+    # Find first '{' and last '}'
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        text = text[first_brace:last_brace + 1]
+    return json.loads(text)
+
+
 # ─── CREATE JOB (file upload path) ───────────────────────────────────────────
 
 @router.post("/upload-jd")
@@ -183,35 +196,15 @@ def extract_jd(
     file_path = f"{UPLOAD_DIR}/{file.filename}"
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    # Extract text from file using robust utility
+    from app.utils.resume_parser import extract_text_from_file
+    file_text = extract_text_from_file(file_path)
         
-    # Try to read text from file if possible (simple text extraction for pdf/docx/txt)
-    file_text = ""
-    try:
-        if file.filename.endswith(".pdf"):
-            # Simple PDF text extraction (scans printable ascii segments)
-            with open(file_path, "rb") as f:
-                content = f.read()
-                # Simple extraction of text in parentheses/brackets or raw characters
-                import re
-                strings = re.findall(rb"[a-zA-Z0-9\s\.,;:!\?\-\'\"]{4,}", content)
-                file_text = " ".join([s.decode("ascii", errors="ignore") for s in strings[:800]])
-        elif file.filename.endswith(".txt"):
-            # Simple text file reading
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                file_text = f.read()[:3000]
-        else:
-            # Simple docx text extraction (docx is zip of xml, we can parse it simply or fallback)
-            import zipfile
-            with zipfile.ZipFile(file_path) as z:
-                xml_content = z.read("word/document.xml")
-                import re
-                clean = re.sub(b"<[^>]*>", b"", xml_content)
-                file_text = clean.decode("utf-8", errors="ignore")[:3000]
-    except Exception as e:
-        print(f"Text extraction fallback: {e}")
-
-    if not file_text:
-        file_text = f"Filename: {file.filename}. No direct text extracted."
+    if not file_text or len(file_text.strip()) < 30:
+        raise HTTPException(
+            status_code=422,
+            detail="The uploaded file appears to be empty, scanned, or contains no readable text. Please use the 'Paste Text' option instead."
+        )
 
     # Check if Groq, Grok, or Gemini API key exists
     import os
@@ -226,11 +219,11 @@ def extract_jd(
     prompt_schema_instructions = f"""
 You MUST extract and output a JSON object matching this EXACT format (no other text, markdown formatting, or explanations):
 {{
-  "role_name": "The official role title (e.g. Senior Frontend Engineer)",
+  "role_name": "The official role title (e.g. Senior Frontend Engineer). For placement/university documents, extract the specific project/role title (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer').",
   "card_name": "A short, visual card title for the board (e.g. Next.js Core Lead Developer)",
   "experience_band": "Choose one of these: 'Upto 2 Years', '1-4 Years', '3-6 Years', '5+ Years'",
-  "description": "A concise 2-3 sentence overview summary of the role and goals.",
-  "skills": "Comma-separated key technical skills (e.g. React, Next.js, TypeScript)",
+  "description": "A concise 2-3 sentence overview summary of the role and goals. For university placement documents, summarize the specific project/role goals (e.g., 'Seeking an intern to automate model monitoring from workflow creation to Tableau dashboards...').",
+  "skills": "Comma-separated key technical skills (e.g. React, Next.js, TypeScript, Python, Tableau)",
   "screening_questions": [
     "Recruiter screening question 1",
     "Recruiter screening question 2",
@@ -244,20 +237,28 @@ You MUST extract and output a JSON object matching this EXACT format (no other t
   "resume_parameters": {{
      "must_have": ["Must-have requirement 1 (e.g. 3+ years experience with React)", "Must-have requirement 2", "Must-have requirement 3"],
      "red_flags": ["Red flag 1 (e.g. Lacks JavaScript core understanding)", "Red flag 2", "Red flag 3"],
-     "good_to_have": ["Good-to-have skill 1 (e.g. Familiar with Webpack)", "Good-to-have skill 2", "Good-to-have skill 3"]
+     "good_to_have": ["Good-to-have skill 1 (e.g. Familiar with Webpack)", "Good-to-have skill 2", "Good-to-have skill 3"],
+     "mustHave": ["Must-have requirement 1", "Must-have requirement 2", "Must-have requirement 3"],
+     "redFlags": ["Red flag 1", "Red flag 2", "Red flag 3"],
+     "goodToHave": ["Good-to-have skill 1", "Good-to-have skill 2", "Good-to-have skill 3"]
   }},
   "screening_parameters": {{
      "experience": [
-        {{"parameter": "Total Experience", "preferred_response": "5+ years"}},
-        {{"parameter": "Relevant Experience", "preferred_response": "3+ years"}}
+        {{"parameter": "Total Experience", "preferred_response": "5+ years", "required": true}},
+        {{"parameter": "Relevant Experience", "preferred_response": "3+ years", "required": true}}
+     ],
+     "academic": [
+        {{"parameter": "Minimum CGPA", "preferred_response": "7.0 and above", "required": true}},
+        {{"parameter": "Eligible Branches", "preferred_response": "A3, A8, AA, A7", "required": true}}
      ],
      "location": [
-        {{"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote"}},
-        {{"parameter": "Ready to relocate", "preferred_response": "Yes"}}
+        {{"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote", "required": false}},
+        {{"parameter": "Ready to relocate", "preferred_response": "Yes", "required": true}}
      ],
      "compensation": [
-        {{"parameter": "Current CTC", "preferred_response": "Market competitive"}},
-        {{"parameter": "Expected CTC", "preferred_response": "Within budget"}}
+        {{"parameter": "Current CTC", "preferred_response": "Market competitive", "required": false}},
+        {{"parameter": "Expected CTC", "preferred_response": "Within budget", "required": false}},
+        {{"parameter": "Stipend", "preferred_response": "INR 45,000 / month", "required": true}}
      ]
   }},
   "functional_parameters": {{
@@ -297,6 +298,11 @@ GUIDELINES:
 1. If the USER EXTRA INSTRUCTIONS request a different role, domain, style, seniority, or completely override the job description text (for example: "okay an HR" or "make it for a Product Manager"), you MUST generate the details for that new requested role from scratch, ignoring the original Job Description text.
 2. Provide realistic and professional content for the role, card visual name, experience level, summary description, key skills (comma-separated), screening questions, and functional assessment questions suitable for the final role.
 3. Ensure the JSON is valid and fits the schema exactly.
+4. If the document is a university placement/practice school sheet (e.g. from BITS Pilani Practice School Division, Standard Chartered, Intel, etc.):
+   - Under 'role_name' and 'card_name', extract the specific project title or role being hired for (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer'). If the user prompt asks to focus on a specific project or role (e.g. 'project 1'), extract that project's title and details.
+   - Do NOT use generic titles like 'Senior Software Engineer' or placeholders if a specific project or role is mentioned in the document.
+   - Extract academic constraints (like CGPA cutoff, e.g. '7 and above', branches/disciplines, e.g. 'A3, A8, AA, A7') and stipend details (e.g. 'INR 45,000 per month') and map them to 'screening_parameters'. Specifically: CGPA cutoffs and eligible branches should go under the 'academic' key as custom parameters, and stipend details should go under 'compensation' as a 'Stipend' parameter.
+5. For each parameter in 'screening_parameters', you MUST determine whether it is required (mandatory) or optional/preferred based on the job description and user instructions. Include a boolean '"required": true' if mandatory, or '"required": false' if optional/preferred.
 
 JOB DESCRIPTION TEXT:
 \"\"\"
@@ -340,13 +346,13 @@ USER EXTRA INSTRUCTIONS / PROMPT:
             with urllib.request.urlopen(req, timeout=30) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
                 text_response = res_data["choices"][0]["message"]["content"].strip()
-                ai_data = json.loads(text_response)
+                ai_data = clean_and_parse_json(text_response)
                 
                 return {
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": ai_data.get("description", "Software engineer description"),
+                    "description": file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -380,6 +386,11 @@ GUIDELINES:
 1. If the USER EXTRA INSTRUCTIONS request a different role, domain, style, seniority, or completely override the job description text (for example: "okay an HR" or "make it for a Product Manager"), you MUST generate the details for that new requested role from scratch, ignoring the original Job Description text.
 2. Provide realistic and professional content for the role, card visual name, experience level, summary description, key skills (comma-separated), screening questions, and functional assessment questions suitable for the final role.
 3. Ensure the JSON is valid and fits the schema exactly.
+4. If the document is a university placement/practice school sheet (e.g. from BITS Pilani Practice School Division, Standard Chartered, Intel, etc.):
+   - Under 'role_name' and 'card_name', extract the specific project title or role being hired for (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer'). If the user prompt asks to focus on a specific project or role (e.g. 'project 1'), extract that project's title and details.
+   - Do NOT use generic titles like 'Senior Software Engineer' or placeholders if a specific project or role is mentioned in the document.
+   - Extract academic constraints (like CGPA cutoff, e.g. '7 and above', branches/disciplines, e.g. 'A3, A8, AA, A7') and stipend details (e.g. 'INR 45,000 per month') and map them to 'screening_parameters'. Specifically: CGPA cutoffs and eligible branches should go under the 'academic' key as custom parameters, and stipend details should go under 'compensation' as a 'Stipend' parameter.
+5. For each parameter in 'screening_parameters', you MUST determine whether it is required (mandatory) or optional/preferred based on the job description and user instructions. Include a boolean '"required": true' if mandatory, or '"required": false' if optional/preferred.
 
 JOB DESCRIPTION TEXT:
 \"\"\"
@@ -424,13 +435,13 @@ USER EXTRA INSTRUCTIONS / PROMPT:
             with urllib.request.urlopen(req, timeout=12) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
                 text_response = res_data["choices"][0]["message"]["content"].strip()
-                ai_data = json.loads(text_response)
+                ai_data = clean_and_parse_json(text_response)
                 
                 return {
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": ai_data.get("description", "Software engineer description"),
+                    "description": file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -464,6 +475,11 @@ GUIDELINES:
 1. If the USER EXTRA INSTRUCTIONS request a different role, domain, style, seniority, or completely override the job description text (for example: "okay an HR" or "make it for a Product Manager"), you MUST generate the details for that new requested role from scratch, ignoring the original Job Description text.
 2. Provide realistic and professional content for the role, card visual name, experience level, summary description, key skills (comma-separated), screening questions, and functional assessment questions suitable for the final role.
 3. Ensure the JSON is valid and fits the schema exactly.
+4. If the document is a university placement/practice school sheet (e.g. from BITS Pilani Practice School Division, Standard Chartered, Intel, etc.):
+   - Under 'role_name' and 'card_name', extract the specific project title or role being hired for (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer'). If the user prompt asks to focus on a specific project or role (e.g. 'project 1'), extract that project's title and details.
+   - Do NOT use generic titles like 'Senior Software Engineer' or placeholders if a specific project or role is mentioned in the document.
+   - Extract academic constraints (like CGPA cutoff, e.g. '7 and above', branches/disciplines, e.g. 'A3, A8, AA, A7') and stipend details (e.g. 'INR 45,000 per month') and map them to 'screening_parameters'. Specifically: CGPA cutoffs and eligible branches should go under the 'academic' key as custom parameters, and stipend details should go under 'compensation' as a 'Stipend' parameter.
+5. For each parameter in 'screening_parameters', you MUST determine whether it is required (mandatory) or optional/preferred based on the job description and user instructions. Include a boolean '"required": true' if mandatory, or '"required": false' if optional/preferred.
 
 JOB DESCRIPTION TEXT:
 \"\"\"
@@ -507,13 +523,13 @@ USER EXTRA INSTRUCTIONS / PROMPT:
             with urllib.request.urlopen(req, timeout=12) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
                 text_response = res_data["choices"][0]["message"]["content"].strip()
-                ai_data = json.loads(text_response)
+                ai_data = clean_and_parse_json(text_response)
                 
                 return {
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": ai_data.get("description", "Software engineer description"),
+                    "description": file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -547,6 +563,11 @@ GUIDELINES:
 1. If the USER EXTRA INSTRUCTIONS request a different role, domain, style, seniority, or completely override the job description text (for example: "okay an HR" or "make it for a Product Manager"), you MUST generate the details for that new requested role from scratch, ignoring the original Job Description text.
 2. Provide realistic and professional content for the role, card visual name, experience level, summary description, key skills (comma-separated), screening questions, and functional assessment questions suitable for the final role.
 3. Ensure the JSON is valid and fits the schema exactly.
+4. If the document is a university placement/practice school sheet (e.g. from BITS Pilani Practice School Division, Standard Chartered, Intel, etc.):
+   - Under 'role_name' and 'card_name', extract the specific project title or role being hired for (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer'). If the user prompt asks to focus on a specific project or role (e.g. 'project 1'), extract that project's title and details.
+   - Do NOT use generic titles like 'Senior Software Engineer' or placeholders if a specific project or role is mentioned in the document.
+   - Extract academic constraints (like CGPA cutoff, e.g. '7 and above', branches/disciplines, e.g. 'A3, A8, AA, A7') and stipend details (e.g. 'INR 45,000 per month') and map them to 'screening_parameters'. Specifically: CGPA cutoffs and eligible branches should go under the 'academic' key as custom parameters, and stipend details should go under 'compensation' as a 'Stipend' parameter.
+5. For each parameter in 'screening_parameters', you MUST determine whether it is required (mandatory) or optional/preferred based on the job description and user instructions. Include a boolean '"required": true' if mandatory, or '"required": false' if optional/preferred.
 
 JOB DESCRIPTION TEXT:
 \"\"\"
@@ -588,13 +609,13 @@ USER EXTRA INSTRUCTIONS / PROMPT:
             with urllib.request.urlopen(req, timeout=10) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
                 text_response = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                ai_data = json.loads(text_response)
+                ai_data = clean_and_parse_json(text_response)
                 
                 return {
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": ai_data.get("description", "Software engineer description"),
+                    "description": file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -807,16 +828,16 @@ USER EXTRA INSTRUCTIONS / PROMPT:
         }
         screening_parameters = {
             "experience": [
-                {"parameter": "Total Experience", "preferred_response": "5+ Years"},
-                {"parameter": "Relevant Experience", "preferred_response": "3+ Years ML"}
+                {"parameter": "Total Experience", "preferred_response": "5+ Years", "required": True},
+                {"parameter": "Relevant Experience", "preferred_response": "3+ Years ML", "required": True}
             ],
             "location": [
-                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote"},
-                {"parameter": "Ready to relocate", "preferred_response": "Yes"}
+                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote", "required": False},
+                {"parameter": "Ready to relocate", "preferred_response": "Yes", "required": True}
             ],
             "compensation": [
-                {"parameter": "Current CTC", "preferred_response": "Market competitive"},
-                {"parameter": "Expected CTC", "preferred_response": "Within budget"}
+                {"parameter": "Current CTC", "preferred_response": "Market competitive", "required": False},
+                {"parameter": "Expected CTC", "preferred_response": "Within budget", "required": False}
             ]
         }
         functional_parameters = {
@@ -861,16 +882,16 @@ USER EXTRA INSTRUCTIONS / PROMPT:
         }
         screening_parameters = {
             "experience": [
-                {"parameter": "Total Experience", "preferred_response": "5+ Years"},
-                {"parameter": "Relevant Experience", "preferred_response": "3+ Years PM"}
+                {"parameter": "Total Experience", "preferred_response": "5+ Years", "required": True},
+                {"parameter": "Relevant Experience", "preferred_response": "3+ Years PM", "required": True}
             ],
             "location": [
-                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote"},
-                {"parameter": "Ready to relocate", "preferred_response": "Yes"}
+                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote", "required": False},
+                {"parameter": "Ready to relocate", "preferred_response": "Yes", "required": True}
             ],
             "compensation": [
-                {"parameter": "Current CTC", "preferred_response": "Market competitive"},
-                {"parameter": "Expected CTC", "preferred_response": "Within budget"}
+                {"parameter": "Current CTC", "preferred_response": "Market competitive", "required": False},
+                {"parameter": "Expected CTC", "preferred_response": "Within budget", "required": False}
             ]
         }
         functional_parameters = {
@@ -915,16 +936,16 @@ USER EXTRA INSTRUCTIONS / PROMPT:
         }
         screening_parameters = {
             "experience": [
-                {"parameter": "Total Experience", "preferred_response": "2+ Years"},
-                {"parameter": "Relevant Experience", "preferred_response": "1+ Years HR"}
+                {"parameter": "Total Experience", "preferred_response": "2+ Years", "required": True},
+                {"parameter": "Relevant Experience", "preferred_response": "1+ Years HR", "required": True}
             ],
             "location": [
-                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote"},
-                {"parameter": "Ready to relocate", "preferred_response": "Yes"}
+                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote", "required": False},
+                {"parameter": "Ready to relocate", "preferred_response": "Yes", "required": True}
             ],
             "compensation": [
-                {"parameter": "Current CTC", "preferred_response": "Market competitive"},
-                {"parameter": "Expected CTC", "preferred_response": "Within budget"}
+                {"parameter": "Current CTC", "preferred_response": "Market competitive", "required": False},
+                {"parameter": "Expected CTC", "preferred_response": "Within budget", "required": False}
             ]
         }
         functional_parameters = {
@@ -969,16 +990,16 @@ USER EXTRA INSTRUCTIONS / PROMPT:
         }
         screening_parameters = {
             "experience": [
-                {"parameter": "Total Experience", "preferred_response": "5+ Years"},
-                {"parameter": "Relevant Experience", "preferred_response": "3+ Years Frontend"}
+                {"parameter": "Total Experience", "preferred_response": "5+ Years", "required": True},
+                {"parameter": "Relevant Experience", "preferred_response": "3+ Years Frontend", "required": True}
             ],
             "location": [
-                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote"},
-                {"parameter": "Ready to relocate", "preferred_response": "Yes"}
+                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote", "required": False},
+                {"parameter": "Ready to relocate", "preferred_response": "Yes", "required": True}
             ],
             "compensation": [
-                {"parameter": "Current CTC", "preferred_response": "Market competitive"},
-                {"parameter": "Expected CTC", "preferred_response": "Within budget"}
+                {"parameter": "Current CTC", "preferred_response": "Market competitive", "required": False},
+                {"parameter": "Expected CTC", "preferred_response": "Within budget", "required": False}
             ]
         }
         functional_parameters = {
@@ -1007,16 +1028,33 @@ USER EXTRA INSTRUCTIONS / PROMPT:
         import re
         guessed = ""
         
-        # Try to parse from description text first
-        lines = [line.strip() for line in file_text.split("\n") if line.strip()]
-        for line in lines[:15]:
-            match = re.search(r'(?i)\b(job\s+title|role|position|title)\s*:\s*(.+)', line)
-            if match:
-                val = match.group(2).strip()
-                val = re.sub(r'[^\w\s\-\(\)\&]', '', val).strip()
-                if val and len(val) < 60:
-                    guessed = val
-                    break
+        # Check if BITS Pilani or similar university placement sheet
+        if "birla institute of technology" in file_text.lower() or "practice school" in file_text.lower():
+            # Search for Project X Title: ...
+            project_match = re.search(r'(?i)Project\s+\d+\s+Title\s*:\s*([^.\n\r]+)', file_text)
+            if project_match:
+                guessed = project_match.group(1).strip()
+            else:
+                # Look for role after Job Description for Software Roles or similar
+                role_match = re.search(r'(?i)Job\s+Description\s+for\s+Software\s+Roles\s*[\r\n]+\s*([^.\r\n]+)', file_text)
+                if role_match:
+                    guessed = role_match.group(1).strip()
+                else:
+                    company_match = re.search(r'(?i)at\s+([^,\r\n]+)', file_text)
+                    if company_match:
+                        guessed = "Software Intern at " + company_match.group(1).strip()
+        
+        if not guessed:
+            # Try to parse from description text first
+            lines = [line.strip() for line in file_text.split("\n") if line.strip()]
+            for line in lines[:15]:
+                match = re.search(r'(?i)\b(job\s+title|role|position|title)\s*:\s*(.+)', line)
+                if match:
+                    val = match.group(2).strip()
+                    val = re.sub(r'[^\w\s\-\(\)\&]', '', val).strip()
+                    if val and len(val) < 60:
+                        guessed = val
+                        break
         
         if not guessed:
             # Look for We are looking/seeking a ... pattern
@@ -1029,7 +1067,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     guessed = val
                     
         if not guessed:
-            # Fall back to filename
+            # Look for fallback to filename
             guessed = file.filename
             guessed = re.sub(r"\.[^.]+$", "", guessed)
             guessed = re.sub(r"[_\-.]", " ", guessed)
@@ -1058,20 +1096,53 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                 "Familiarity with AWS cloud solutions",
                 "Experience with testing frameworks (pytest)",
                 "Contributions to microservice infrastructures"
+            ],
+            "mustHave": [
+                "Proficiency in Python and PostgreSQL",
+                "Strong API and server-side architecture background",
+                "3+ years software engineering experience"
+            ],
+            "redFlags": [
+                "No experience with docker or containers",
+                "Lacks database optimization skills",
+                "Unable to write asynchronous code"
+            ],
+            "goodToHave": [
+                "Familiarity with AWS cloud solutions",
+                "Experience with testing frameworks (pytest)",
+                "Contributions to microservice infrastructures"
             ]
         }
+
+        # Extract CGPA Cutoff from text if present
+        cgpa_cutoff = "7.0 and above"
+        cgpa_match = re.search(r'(?i)CGPA\s+cutoff\s*:\s*([^.\r\n]+)', file_text)
+        if cgpa_match:
+            cgpa_cutoff = cgpa_match.group(1).strip()
+            
+        # Extract Stipend from text if present
+        stipend_val = "INR 45,000 / month"
+        stipend_match = re.search(r'(?i)Stipend\s+(?:per\s+month\s+)?\(INR\)\s*:\s*([^.\r\n]+)', file_text)
+        if stipend_match:
+            stipend_val = "INR " + stipend_match.group(1).strip() + " / month"
+
         screening_parameters = {
             "experience": [
-                {"parameter": "Total Experience", "preferred_response": "3+ Years"},
-                {"parameter": "Relevant Experience", "preferred_response": "2+ Years API"}
+                {"parameter": "Total Experience", "preferred_response": "3+ Years", "required": True},
+                {"parameter": "Relevant Experience", "preferred_response": "2+ Years API", "required": True}
+            ],
+            "academic": [
+                {"parameter": "Minimum CGPA", "preferred_response": cgpa_cutoff, "required": True},
+                {"parameter": "Eligible Branches", "preferred_response": "A3, A8, AA, A7", "required": True}
             ],
             "location": [
-                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote"},
-                {"parameter": "Ready to relocate", "preferred_response": "Yes"}
+                {"parameter": "Current Location", "preferred_response": "Mumbai/Pune/Remote", "required": False},
+                {"parameter": "Ready to relocate", "preferred_response": "Yes", "required": True}
             ],
             "compensation": [
-                {"parameter": "Current CTC", "preferred_response": "Market competitive"},
-                {"parameter": "Expected CTC", "preferred_response": "Within budget"}
+                {"parameter": "Current CTC", "preferred_response": "Market competitive", "required": False},
+                {"parameter": "Expected CTC", "preferred_response": "Within budget", "required": False},
+                {"parameter": "Stipend", "preferred_response": stipend_val, "required": True}
             ]
         }
         functional_parameters = {
@@ -1104,7 +1175,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
         "role_name": role_name,
         "card_name": card_name,
         "experience_band": experience_band,
-        "description": description,
+        "description": file_text,
         "skills": skills,
         "screening_questions": screening_questions,
         "functional_questions": functional_questions,
@@ -1414,37 +1485,61 @@ def upload_resumes(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        # Clean candidate name from filename (e.g. "aditya_rana_resume" -> "Aditya Rana")
-        filename_without_ext = os.path.splitext(file.filename)[0]
-        temp_name = filename_without_ext.lower()
-        for word_to_remove in ["resume", "cv", "profile", "bio", "final"]:
-            temp_name = temp_name.replace(word_to_remove, "")
-        temp_name = temp_name.replace("_", " ").replace("-", " ").strip()
-        cleaned_name = " ".join([word.capitalize() for word in temp_name.split()])
+        from dotenv import load_dotenv
+        load_dotenv()
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
         
-        # Look for an existing candidate in this job pipeline with a matching name
-        existing_applicant = db.query(Applicant).filter(
-            Applicant.job_id == job_id,
-            func.lower(Applicant.name).like(f"%{cleaned_name.lower()}%")
-        ).first()
+        from app.utils.resume_parser import parse_resume_with_deepseek
+        parsed_info = parse_resume_with_deepseek(file_path, file.filename, deepseek_key)
+        parsed_name = parsed_info.get("name")
+        parsed_email = parsed_info.get("email")
+        parsed_phone = parsed_info.get("phone")
         
+        # Look for an existing candidate in this job pipeline with a matching email or name
+        existing_applicant = None
+        if parsed_email:
+            existing_applicant = db.query(Applicant).filter(
+                Applicant.job_id == job_id,
+                func.lower(Applicant.email) == parsed_email.lower()
+            ).first()
+            
+        if not existing_applicant and parsed_name:
+            existing_applicant = db.query(Applicant).filter(
+                Applicant.job_id == job_id,
+                func.lower(Applicant.name).like(f"%{parsed_name.lower()}%")
+            ).first()
+            
         if existing_applicant:
             # Map resume to the existing candidate record
             existing_applicant.resume_url = file_path
             existing_applicant.resume_analysed = True
-            if source:
+            
+            # Preserve the source: do not overwrite existing source if already set
+            if not existing_applicant.source and source:
                 existing_applicant.source = source
-                if source == ApplicantSource.scheduled:
-                    existing_applicant.screening_status = InterviewStatus.pending
+                
+            # If the source is scheduled, ensure screening_status is set
+            if existing_applicant.source == ApplicantSource.scheduled and not existing_applicant.screening_status:
+                existing_applicant.screening_status = InterviewStatus.pending
+                
+            # Update candidate details if they were defaults or unset
+            if parsed_email and ("@candidate.io" in existing_applicant.email or not existing_applicant.email):
+                existing_applicant.email = parsed_email
+            if parsed_phone and (existing_applicant.phone == "+1 555-0199" or not existing_applicant.phone):
+                existing_applicant.phone = parsed_phone
+            if parsed_name and (existing_applicant.name == "Candidate" or not existing_applicant.name):
+                existing_applicant.name = parsed_name
+                
             db.add(existing_applicant)
             created_applicants.append(existing_applicant)
         else:
-            # Create new applicant profile
-            email = f"{cleaned_name.lower().replace(' ', '.')}@candidate.io"
+            # Create new applicant profile using parsed details
+            import uuid
+            email_val = parsed_email or f"candidate.{uuid.uuid4().hex[:6]}@candidate.io"
             applicant = Applicant(
-                name=cleaned_name,
-                email=email,
-                phone="+1 555-0199",
+                name=parsed_name or "Candidate",
+                email=email_val,
+                phone=parsed_phone or "+1 555-0199",
                 source=source or ApplicantSource.bulk_upload,
                 resume_url=file_path,
                 job_id=job_id,
@@ -1518,25 +1613,6 @@ def get_applicant_resume_text(
     if not applicant.resume_url or not os.path.exists(applicant.resume_url):
         return {"text": ""}
     
-    file_text = ""
-    try:
-        if applicant.resume_url.endswith(".pdf"):
-            with open(applicant.resume_url, "rb") as f:
-                content = f.read()
-                import re
-                strings = re.findall(rb"[a-zA-Z0-9\s\.,;:!\?\-\'\"]{4,}", content)
-                file_text = " ".join([s.decode("ascii", errors="ignore") for s in strings[:800]])
-        elif applicant.resume_url.endswith(".txt"):
-            with open(applicant.resume_url, "r", encoding="utf-8", errors="ignore") as f:
-                file_text = f.read()[:3000]
-        elif applicant.resume_url.endswith(".docx"):
-            import zipfile
-            with zipfile.ZipFile(applicant.resume_url) as z:
-                xml_content = z.read("word/document.xml")
-                import re
-                clean = re.sub(b"<[^>]*>", b"", xml_content)
-                file_text = clean.decode("utf-8", errors="ignore")[:3000]
-    except Exception as e:
-        print(f"Error reading resume file {applicant.resume_url}: {e}")
-        
+    from app.utils.resume_parser import extract_text_from_file
+    file_text = extract_text_from_file(applicant.resume_url)
     return {"text": file_text}
