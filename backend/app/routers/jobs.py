@@ -222,7 +222,8 @@ You MUST extract and output a JSON object matching this EXACT format (no other t
   "role_name": "The official role title (e.g. Senior Frontend Engineer). For placement/university documents, extract the specific project/role title (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer').",
   "card_name": "A short, visual card title for the board (e.g. Next.js Core Lead Developer)",
   "experience_band": "Choose one of these: 'Upto 2 Years', '1-4 Years', '3-6 Years', '5+ Years'",
-  "description": "A concise 2-3 sentence overview summary of the role and goals. For university placement documents, summarize the specific project/role goals (e.g., 'Seeking an intern to automate model monitoring from workflow creation to Tableau dashboards...').",
+  "summary": "A concise 2-3 sentence overview summary of the role and goals.",
+  "description": "A clean, structured, and 'to the point' description of the job (e.g. responsibilities, requirements) formatted cleanly in markdown or bullet points, based on the provided JD text.",
   "skills": "Comma-separated key technical skills (e.g. React, Next.js, TypeScript, Python, Tableau)",
   "screening_questions": [
     "Recruiter screening question 1",
@@ -352,7 +353,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": file_text,
+                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -441,7 +442,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": file_text,
+                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -529,7 +530,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": file_text,
+                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -615,7 +616,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": file_text,
+                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -1479,34 +1480,65 @@ def upload_resumes(
     os.makedirs(resume_dir, exist_ok=True)
     
     created_applicants = []
+    files_to_process = []
+    
     for file in files:
-        # Save file
-        file_path = f"{resume_dir}/{file.filename}"
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        if file.filename.lower().endswith('.zip'):
+            import zipfile
+            import tempfile
+            # Create a temp directory inside resume_dir
+            temp_dir = tempfile.mkdtemp(dir=resume_dir)
+            zip_path = os.path.join(temp_dir, file.filename)
+            with open(zip_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
             
-        from dotenv import load_dotenv
-        load_dotenv()
-        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
-        
+            try:
+                with zipfile.ZipFile(zip_path) as z:
+                    for zip_info in z.infolist():
+                        if zip_info.is_dir():
+                            continue
+                        filename = os.path.basename(zip_info.filename)
+                        if not filename or filename.startswith('.') or filename.startswith('__MACOSX'):
+                            continue
+                        if filename.lower().endswith(('.pdf', '.docx', '.txt')):
+                            source_file = z.open(zip_info)
+                            target_path = os.path.join(resume_dir, filename)
+                            with open(target_path, "wb") as target_buffer:
+                                shutil.copyfileobj(source_file, target_buffer)
+                            files_to_process.append((target_path, filename))
+            except Exception as e:
+                print(f"Error unzipping {file.filename}: {e}")
+        else:
+            file_path = f"{resume_dir}/{file.filename}"
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            files_to_process.append((file_path, file.filename))
+
+    from dotenv import load_dotenv
+    load_dotenv()
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+
+    for file_path, filename in files_to_process:
         from app.utils.resume_parser import parse_resume_with_deepseek
-        parsed_info = parse_resume_with_deepseek(file_path, file.filename, deepseek_key)
+        parsed_info = parse_resume_with_deepseek(file_path, filename, deepseek_key)
         parsed_name = parsed_info.get("name")
         parsed_email = parsed_info.get("email")
         parsed_phone = parsed_info.get("phone")
         
         # Look for an existing candidate in this job pipeline with a matching email or name
         existing_applicant = None
-        if parsed_email:
+        # Only check by email if it's a real email (not a dummy one ending in @candidate.io)
+        if parsed_email and not parsed_email.lower().endswith("@candidate.io"):
             existing_applicant = db.query(Applicant).filter(
                 Applicant.job_id == job_id,
                 func.lower(Applicant.email) == parsed_email.lower()
             ).first()
             
-        if not existing_applicant and parsed_name:
+        # Only check by name if name is provided, not "Candidate", and not empty
+        if not existing_applicant and parsed_name and parsed_name.lower() != "candidate":
             existing_applicant = db.query(Applicant).filter(
                 Applicant.job_id == job_id,
-                func.lower(Applicant.name).like(f"%{parsed_name.lower()}%")
+                func.lower(Applicant.name) == parsed_name.lower()
             ).first()
             
         if existing_applicant:
@@ -1605,6 +1637,37 @@ def update_applicant(
         pass
 
     return applicant
+
+
+@router.delete("/applicants/{applicant_id}")
+def delete_applicant(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    job = db.query(Job).filter(Job.id == applicant.job_id).first()
+    role_name = job.role_name if job else "the position"
+    applicant_name = applicant.name
+    
+    db.delete(applicant)
+    db.commit()
+    
+    # Broadcast deletion update via WebSocket
+    message = OutgoingMessage(
+        type="candidate_update",
+        content=f"Candidate {applicant_name} was removed from {role_name}",
+        sender="System"
+    ).model_dump_json()
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(manager.broadcast(message, room_id="global"))
+    except RuntimeError:
+        pass
+
+    return {"message": "Applicant successfully deleted"}
 
 
 @router.get("/applicants/{applicant_id}/resume-text")

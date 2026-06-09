@@ -3000,10 +3000,17 @@ function openReportDrawerForCandidate(candidateId) {
       `;
     }
 
+    let advanceText = 'Hire Candidate ✓';
+    if (candidate.status === 'Resume') {
+      advanceText = 'Advance to Screening →';
+    } else if (candidate.status === 'Screening') {
+      advanceText = 'Advance to Functional →';
+    }
+
     actionsBody.innerHTML = `
       <div class="jd-card-actions inline" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
         <button class="btn-stage-reject" data-candidate-id="${candidateId}">Reject</button>
-        <button class="btn-stage-advance" data-candidate-id="${candidateId}">${candidate.status === 'Screening' ? 'Advance to Functional →' : 'Hire Candidate ✓'}</button>
+        <button class="btn-stage-advance" data-candidate-id="${candidateId}">${advanceText}</button>
         ${extraButtons}
       </div>
     `;
@@ -3012,7 +3019,12 @@ function openReportDrawerForCandidate(candidateId) {
       closeAllDrawers();
     });
     actionsBody.querySelector('.btn-stage-advance')?.addEventListener('click', () => {
-      const next = candidate.status === 'Screening' ? 'Functional' : 'Hired';
+      let next = 'Hired';
+      if (candidate.status === 'Resume') {
+        next = 'Screening';
+      } else if (candidate.status === 'Screening') {
+        next = 'Functional';
+      }
       updateCandidateStatus(candidateId, next);
       closeAllDrawers();
     });
@@ -3400,8 +3412,33 @@ function renderCareerPageConfig(job, panel) {
             <span><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg> ${job.createdBy || 'Akross'}</span>
             <span class="jf-jd-badge">${job.experienceBand || 'Fresher'}</span>
           </div>
-          <h5 style="color: var(--color-gold); margin: 16px 0 8px; font-size: 0.85rem;">Job overview</h5>
-          <p class="jf-jd-desc">${job.description || 'No description provided.'}</p>
+          ${(() => {
+            const descText = job.description || 'No description provided.';
+            const doubleNewlineIndex = descText.indexOf('\n\n');
+            let summary = '';
+            let desc = descText;
+            if (doubleNewlineIndex !== -1) {
+              summary = descText.slice(0, doubleNewlineIndex).trim();
+              desc = descText.slice(doubleNewlineIndex).trim();
+            } else {
+              const sentences = descText.match(/[^.!?]+[.!?]+/g) || [descText];
+              if (sentences.length > 2) {
+                summary = sentences.slice(0, 2).join(' ').trim();
+                desc = sentences.slice(2).join(' ').trim();
+              } else {
+                summary = descText;
+                desc = '';
+              }
+            }
+            return `
+              <h5 style="color: var(--color-gold); margin: 16px 0 8px; font-size: 0.85rem;">Job overview</h5>
+              <p class="jf-jd-desc" style="margin-bottom: 20px;">${summary}</p>
+              ${desc ? `
+                <h5 style="color: var(--color-gold); margin: 16px 0 8px; font-size: 0.85rem;">Job description</h5>
+                <p class="jf-jd-desc">${desc}</p>
+              ` : ''}
+            `;
+          })()}
         `}
       </div>
     </div>
@@ -3682,6 +3719,8 @@ function toggleJobFlowResumeCriteriaEdit(job) {
 function renderScreeningConfig(job, panel) {
   const params = job.screeningParams || [];
   const totalParams = params.reduce((a, c) => a + (c.params ? c.params.length : 0), 0);
+  const isEditing = panel.dataset.screeningEditing === 'true';
+  const gridStyle = isEditing ? 'style="grid-template-columns: 28px 40px 1fr 120px 1fr 40px;"' : '';
 
   panel.innerHTML = `
     <div class="jf-config-header">
@@ -3690,6 +3729,10 @@ function renderScreeningConfig(job, panel) {
         <p class="jf-config-subtitle">AI-powered screening with configurable parameters</p>
       </div>
       <div class="jf-config-header-actions">
+        <button class="btn-jf-edit" id="jf-btn-edit-screening">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ${isEditing ? 'Save' : 'Edit'}
+        </button>
         <span class="jf-stat-pill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${totalParams} Parameters</span>
         <span class="jf-stat-pill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 5 – 10 mins</span>
       </div>
@@ -3710,22 +3753,36 @@ function renderScreeningConfig(job, panel) {
             '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'}
           ${cat.category}
         </h4>
-        <div class="jf-param-table-header">
+        <div class="jf-param-table-header" ${gridStyle}>
           <span class="jf-ph-drag"></span>
           <span class="jf-ph-req">Req</span>
           <span class="jf-ph-param">Parameter</span>
           <span class="jf-ph-flex">Flexibility</span>
           <span class="jf-ph-resp">Preferred Response</span>
+          ${isEditing ? '<span class="jf-ph-action" style="text-align:center;">Del</span>' : ''}
         </div>
         ${(cat.params || []).map(p => `
-          <div class="jf-param-row">
+          <div class="jf-param-row" ${gridStyle}>
             <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
             <span class="jf-pr-req"><input type="checkbox" ${p.required ? 'checked' : ''} /></span>
-            <span class="jf-pr-param">${p.name}</span>
-            <span class="jf-pr-flex"><select class="jf-select-sm"><option>Select</option><option>Must Match</option><option>Flexible</option><option>Nice to Have</option></select></span>
+            <span class="jf-pr-param">
+              ${isEditing
+                ? `<input type="text" class="jf-param-name-input jf-edit-input-sm" value="${p.name.replace(/"/g, '&quot;')}" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); border-radius:4px; color:var(--color-text-primary); padding:3px 6px; font-size:0.8rem;" />`
+                : p.name}
+            </span>
+            <span class="jf-pr-flex">
+              <select class="jf-select-sm">
+                <option ${p.flexibility === 'Select' || !p.flexibility ? 'selected' : ''}>Select</option>
+                <option ${p.flexibility === 'Must Match' ? 'selected' : ''}>Must Match</option>
+                <option ${p.flexibility === 'Flexible' ? 'selected' : ''}>Flexible</option>
+                <option ${p.flexibility === 'Nice to Have' ? 'selected' : ''}>Nice to Have</option>
+              </select>
+            </span>
             <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="${p.preferredResponse || ''}" placeholder="Enter preferred response..." /></span>
+            ${isEditing ? '<span class="jf-pr-action" style="display:flex; justify-content:center;"><button class="btn-jf-remove-field btn-screening-param-remove" style="color:var(--color-text-faint); font-size:1.1rem;">×</button></span>' : ''}
           </div>
         `).join('')}
+        ${isEditing ? `<button class="btn-jf-add-field btn-screening-param-add" data-cat="${cat.category}" style="margin-top:8px; width:100%; border:1px dashed var(--glass-border); background:rgba(255,255,255,0.02); color:var(--color-gold); font-size:0.76rem; padding:6px 12px; border-radius:6px; cursor:pointer;">+ Add Parameter</button>` : ''}
       </div>
     `).join('')}
 
@@ -3739,36 +3796,80 @@ function renderScreeningConfig(job, panel) {
     const reqCheckbox = row.querySelector('.jf-pr-req input');
     const flexSelect = row.querySelector('.jf-pr-flex select');
     const respInput = row.querySelector('.jf-pr-resp input');
-    const paramName = row.querySelector('.jf-pr-param')?.textContent.trim();
-
-    if (flexSelect) {
-      const param = params.flatMap(c => c.params).find(p => p.name === paramName);
-      if (param?.flexibility) flexSelect.value = param.flexibility;
-    }
-
     [reqCheckbox, flexSelect, respInput].forEach(el => {
       if (el) el.addEventListener('change', () => { el.closest('.jf-param-row').classList.add('jf-row-dirty'); });
     });
   });
 
-  document.getElementById('btn-screening-save')?.addEventListener('click', () => {
-    panel.querySelectorAll('.jf-param-category').forEach(catEl => {
-      const catTitle = catEl.querySelector('.jf-param-category-title')?.textContent.trim();
-      const cat = params.find(c => c.category === catTitle);
-      if (!cat) return;
-      catEl.querySelectorAll('.jf-param-row').forEach(row => {
-        const name = row.querySelector('.jf-pr-param')?.textContent.trim();
-        const param = cat.params.find(p => p.name === name);
-        if (!param) return;
-        param.required = row.querySelector('.jf-pr-req input')?.checked ?? param.required;
-        param.flexibility = row.querySelector('.jf-pr-flex select')?.value || 'Select';
-        param.preferredResponse = row.querySelector('.jf-pr-resp input')?.value || '';
+  if (isEditing) {
+    panel.querySelectorAll('.btn-screening-param-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.jf-param-row').remove();
       });
     });
-    job.screeningParams = params;
+
+    panel.querySelectorAll('.btn-screening-param-add').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const catEl = btn.closest('.jf-param-category');
+        const row = document.createElement('div');
+        row.className = 'jf-param-row editing-row';
+        row.style.gridTemplateColumns = '28px 40px 1fr 120px 1fr 40px';
+        row.innerHTML = `
+          <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+          <span class="jf-pr-req"><input type="checkbox" /></span>
+          <span class="jf-pr-param"><input type="text" class="jf-param-name-input jf-edit-input-sm" value="" placeholder="New parameter name..." style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); border-radius:4px; color:var(--color-text-primary); padding:3px 6px; font-size:0.8rem;" /></span>
+          <span class="jf-pr-flex">
+            <select class="jf-select-sm">
+              <option selected>Select</option>
+              <option>Must Match</option>
+              <option>Flexible</option>
+              <option>Nice to Have</option>
+            </select>
+          </span>
+          <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="" placeholder="Enter preferred response..." /></span>
+          <span class="jf-pr-action" style="display:flex; justify-content:center;"><button class="btn-jf-remove-field btn-screening-param-remove" style="color:var(--color-text-faint); font-size:1.1rem;">×</button></span>
+        `;
+        catEl.insertBefore(row, btn);
+        row.querySelector('.btn-screening-param-remove').addEventListener('click', () => row.remove());
+        row.querySelector('.jf-param-name-input').focus();
+      });
+    });
+  }
+
+  const doSave = async () => {
+    const newCats = [];
+    panel.querySelectorAll('.jf-param-category').forEach(catEl => {
+      const catTitle = catEl.querySelector('.jf-param-category-title')?.textContent.trim();
+      const paramsList = [];
+      catEl.querySelectorAll('.jf-param-row').forEach(row => {
+        const nameInput = row.querySelector('.jf-param-name-input');
+        const name = nameInput ? nameInput.value.trim() : row.querySelector('.jf-pr-param')?.textContent.trim();
+        if (!name) return;
+        const required = row.querySelector('.jf-pr-req input')?.checked ?? false;
+        const flexibility = row.querySelector('.jf-pr-flex select')?.value || 'Select';
+        const preferredResponse = row.querySelector('.jf-pr-resp input')?.value || '';
+        paramsList.push({ name, required, flexibility, preferredResponse });
+      });
+      newCats.push({ category: catTitle, params: paramsList });
+    });
+    
+    job.screeningParams = newCats;
+    await syncJobParametersInBackend(job);
     saveStateToLocalStorage();
     showPremiumToast('Screening parameters saved.', 'success');
-    panel.querySelectorAll('.jf-row-dirty').forEach(r => r.classList.remove('jf-row-dirty'));
+    panel.dataset.screeningEditing = 'false';
+    renderScreeningConfig(job, panel);
+  };
+
+  document.getElementById('btn-screening-save')?.addEventListener('click', doSave);
+
+  document.getElementById('jf-btn-edit-screening')?.addEventListener('click', () => {
+    if (isEditing) {
+      doSave();
+    } else {
+      panel.dataset.screeningEditing = 'true';
+      renderScreeningConfig(job, panel);
+    }
   });
 }
 
@@ -6185,6 +6286,8 @@ function initSourcing() {
   if (btnResumesCancel) {
     btnResumesCancel.addEventListener('click', () => {
       uploadedFiles = [];
+      const filesList = document.getElementById('resumes-files-list');
+      if (filesList) filesList.innerHTML = '';
       document.getElementById('resumes-preview-box').style.display = 'none';
       if (inputFileResumes) inputFileResumes.value = '';
       soundEngine.playClick();
@@ -6419,7 +6522,7 @@ function switchSourcingMode(mode) {
   const manualCard = document.getElementById('card-src-manual');
 
   if (mode === 'analyse') {
-    if (csvCard) csvCard.style.display = 'none';
+    if (csvCard) csvCard.style.display = 'flex';
     if (manualCard) manualCard.style.display = 'none';
     
     // Default to Resumes tab for Analyse mode
@@ -6598,6 +6701,7 @@ function handleResumesFileSelect(event) {
   const files = event.target.files;
   if (files.length === 0) return;
   simulateResumesParsing(files);
+  event.target.value = '';
 }
 
 function simulateResumesParsing(files) {
@@ -6609,13 +6713,12 @@ function simulateResumesParsing(files) {
   if (!box || !filesList || !countSpan || !importBtn) return;
 
   box.style.display = 'block';
-  countSpan.textContent = files.length;
   importBtn.disabled = true;
 
-  uploadedFiles = [];
-  filesList.innerHTML = '';
+  const startIdx = uploadedFiles.length;
 
-  Array.from(files).forEach((file, idx) => {
+  Array.from(files).forEach((file, i) => {
+    const idx = startIdx + i;
     const item = {
       file: file,
       name: file.name,
@@ -6669,6 +6772,8 @@ function simulateResumesParsing(files) {
       }
     }, 150 + Math.random() * 150);
   });
+
+  countSpan.textContent = uploadedFiles.length;
 }
 
 function checkAllResumesDone() {
@@ -6710,6 +6815,8 @@ async function importResumesCandidates() {
       
       // Reset
       uploadedFiles = [];
+      const filesList = document.getElementById('resumes-files-list');
+      if (filesList) filesList.innerHTML = '';
       document.getElementById('resumes-preview-box').style.display = 'none';
       const fileRes = document.getElementById('input-file-resumes');
       if (fileRes) fileRes.value = '';
@@ -7157,10 +7264,18 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                     }
                   </td>
                   <td>
-                    <div style="display:flex;gap:6px;justify-content:center;">
-                      <button class="btn-stage-reject" data-candidate-id="${c.id}" style="padding:4px 8px;font-size:0.72rem;">Reject</button>
-                      <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening" style="padding:4px 8px;font-size:0.72rem;">Advance</button>
-                    </div>
+                    ${(c.status === 'Resume' && c.source !== 'Scheduled' && c.source !== 'scheduled') ? `
+                      <div style="display:flex;gap:6px;justify-content:center;">
+                        <button class="btn-stage-reject" data-candidate-id="${c.id}" style="padding:4px 8px;font-size:0.72rem;">Reject</button>
+                        <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening" style="padding:4px 8px;font-size:0.72rem;">Advance</button>
+                      </div>
+                    ` : `
+                      <div style="text-align:center;">
+                        <span class="ra-status-badge analysed" style="background:rgba(212,175,55,0.12);color:var(--color-gold);border:1px solid rgba(212,175,55,0.25);padding:3px 8px;font-size:0.72rem;border-radius:4px;display:inline-block;font-weight:500;">
+                          ${(c.source === 'Scheduled' || c.source === 'scheduled') ? 'Screening' : 'Advanced'}
+                        </span>
+                      </div>
+                    `}
                   </td>
                 </tr>
               `;
@@ -7229,6 +7344,18 @@ function bindResumeAnalysisEvents(job) {
       if (resumeAnalysisCache[cid]) {
         openReportDrawerForCandidate(cid);
       }
+    });
+
+    const rejectBtn = row.querySelector('.btn-stage-reject');
+    const advanceBtn = row.querySelector('.btn-stage-advance');
+
+    rejectBtn?.addEventListener('click', () => {
+      updateCandidateStatus(cid, 'Rejected');
+    });
+
+    advanceBtn?.addEventListener('click', () => {
+      const nextStage = advanceBtn.dataset.nextStage || 'Screening';
+      updateCandidateStatus(cid, nextStage);
     });
   });
 }
@@ -7663,16 +7790,31 @@ function renderJobDetailPanes(job) {
   const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
     const matchesJob = c.jobApplied === job.roleName || c.jobApplied === job.cardName;
     if (!matchesJob) return false;
+    if (c.status === 'Rejected') return false; // Exclude rejected candidates
     if (searchVal) {
       return c.name.toLowerCase().includes(searchVal) || c.email.toLowerCase().includes(searchVal);
     }
     return true;
   });
 
+  // Dynamic Tab Counts Update
+  const countScreening = document.getElementById('jd-count-screening');
+  if (countScreening) {
+    countScreening.textContent = jobCandidates.filter(c => c.status === 'Screening').length;
+  }
+  const countFunctional = document.getElementById('jd-count-functional');
+  if (countFunctional) {
+    countFunctional.textContent = jobCandidates.filter(c => c.status === 'Functional').length;
+  }
+  const headerSubText = document.getElementById('header-sub-text');
+  if (headerSubText) {
+    headerSubText.textContent = `${jobCandidates.length} total candidate${jobCandidates.length !== 1 ? 's' : ''} · ${job.roleName}`;
+  }
+
   // 1. Resume pane — criteria config + candidates table
   const resumeList = document.getElementById('list-stage-resume');
   if (resumeList) {
-    const resumeCands = jobCandidates.filter(c => c.status === 'Resume' || (c.status === 'Screening' && c.source === 'Scheduled'));
+    const resumeCands = jobCandidates;
     const criteria = job.resumeCriteria || {};
     const mustHave = criteria.mustHave || [];
     const redFlags = criteria.redFlags || [];
@@ -8150,65 +8292,73 @@ function renderJobDetailPanes(job) {
           }
           const label = names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
           if (action === 'advance') {
-            const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
-            ids.forEach(async cid => {
-              const cand = AppState.candidates.find(c => c.id === cid);
-              if (cand) {
-                const idx = stages.indexOf(cand.status);
-                if (idx < stages.length - 1) {
-                  const next = stages[idx + 1];
-                  const patchData = {};
-                  if (next === 'Rejected') {
-                    patchData.remarks = 'Rejected';
-                  } else if (next === 'Hired') {
-                    patchData.remarks = 'Hired';
-                  } else if (next === 'Functional') {
-                    patchData.functional_status = 'completed';
-                    if (cand.interviewScore === null || cand.interviewScore === '—') {
-                      patchData.functional_score = Math.floor(Math.random() * 31) + 60;
+            showThemedConfirm(
+              'Advance Candidates',
+              `Are you sure you want to advance the selected applicant(s)?`,
+              async () => {
+                const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
+                const promises = ids.map(async cid => {
+                  const cand = AppState.candidates.find(c => c.id === cid);
+                  if (cand) {
+                    const idx = stages.indexOf(cand.status);
+                    if (idx < stages.length - 1) {
+                      const next = stages[idx + 1];
+                      const patchData = {};
+                      if (next === 'Rejected') {
+                        patchData.remarks = 'Rejected';
+                      } else if (next === 'Hired') {
+                        patchData.remarks = 'Hired';
+                      } else if (next === 'Functional') {
+                        patchData.functional_status = 'completed';
+                        if (cand.interviewScore === null || cand.interviewScore === '—') {
+                          patchData.functional_score = Math.floor(Math.random() * 31) + 60;
+                        }
+                        patchData.cheat_probability = 'low';
+                        patchData.remarks = null;
+                      } else if (next === 'Screening') {
+                        patchData.screening_status = 'completed';
+                        if (cand.interviewScore === null || cand.interviewScore === '—') {
+                          patchData.screening_score = Math.floor(Math.random() * 31) + 60;
+                        }
+                        patchData.functional_status = null;
+                        patchData.remarks = null;
+                      }
+                      try {
+                        await apiFetch(`/api/jobs/applicants/${cid}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(patchData)
+                        });
+                      } catch (err) {
+                        console.error("Failed to advance candidate:", cid, err);
+                      }
                     }
-                    patchData.cheat_probability = 'low';
-                    patchData.remarks = null;
-                  } else if (next === 'Screening') {
-                    patchData.screening_status = 'completed';
-                    if (cand.interviewScore === null || cand.interviewScore === '—') {
-                      patchData.screening_score = Math.floor(Math.random() * 31) + 60;
-                    }
-                    patchData.functional_status = null;
-                    patchData.remarks = null;
                   }
-                  try {
-                    await apiFetch(`/api/jobs/applicants/${cid}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(patchData)
-                    });
-                  } catch (err) {
-                    console.error("Failed to advance candidate:", cid, err);
-                  }
-                }
-              }
-            });
-            setTimeout(async () => {
-              await loadStateFromBackend();
-              showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
-            }, 500);
-          } else if (action === 'reject') {
-            ids.forEach(async cid => {
-              try {
-                await apiFetch(`/api/jobs/applicants/${cid}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ remarks: 'Rejected' })
                 });
-              } catch (err) {
-                console.error("Failed to reject candidate:", cid, err);
-              }
-            });
-            setTimeout(async () => {
-              await loadStateFromBackend();
-              showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
-            }, 500);
+                await Promise.all(promises);
+                await loadStateFromBackend();
+                showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
+              },
+              'Advance'
+            );
+          } else if (action === 'reject') {
+            showThemedConfirm(
+              'Reject & Delete Candidates',
+              `Are you sure you want to reject the selected applicant(s)?`,
+              async () => {
+                const promises = ids.map(cid => 
+                  apiFetch(`/api/jobs/applicants/${cid}`, {
+                    method: 'DELETE'
+                  }).catch(err => {
+                    console.error("Failed to delete candidate:", cid, err);
+                  })
+                );
+                await Promise.all(promises);
+                await loadStateFromBackend();
+                showPremiumToast(`Rejected & permanently deleted ${ids.length} candidate(s).`, 'success');
+              },
+              'Delete'
+            );
           } else if (action === 'schedule' || action === 'reschedule') {
             openScheduleModal(label, action, (date, time) => {
               const isoDateTime = new Date(`${date}T${time}`).toISOString();
@@ -8357,28 +8507,143 @@ function renderJobDetailPanes(job) {
   renderQuestionsPane(job);
 }
 
+function showThemedConfirm(title, message, onConfirm, confirmText = 'Delete') {
+  if (document.getElementById('themed-confirm-overlay')) {
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.id = 'themed-confirm-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+  overlay.style.justifyContent = 'center';
+  overlay.style.alignItems = 'center';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+  overlay.style.backdropFilter = 'blur(8px)';
+  overlay.style.zIndex = '99999';
+
+  const isDelete = confirmText === 'Delete';
+  const btnColor = isDelete ? '#ef4444' : 'var(--color-gold)';
+  const btnTextColor = isDelete ? 'white' : 'black';
+
+  overlay.innerHTML = `
+    <div class="modal-box card-glass" style="max-width: 400px; width: 90%; padding: 24px; border-radius: 12px; background: rgba(18, 18, 24, 0.95); border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); text-align: center; font-family: var(--font-body), 'Outfit', sans-serif;">
+      <h3 style="margin-top: 0; color: var(--color-text-primary); font-size: 1.25rem; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        ${isDelete 
+          ? `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+        }
+        ${title}
+      </h3>
+      <p style="color: var(--color-text-secondary); font-size: 0.9rem; line-height: 1.5; margin-bottom: 24px;">${message}</p>
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button id="themed-confirm-cancel" style="padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.05); color: var(--color-text-primary);">Cancel</button>
+        <button id="themed-confirm-ok" style="padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; border: none; background: ${btnColor}; color: ${btnTextColor}; font-weight: 600;">${confirmText}</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const cancelBtn = overlay.querySelector('#themed-confirm-cancel');
+  const okBtn = overlay.querySelector('#themed-confirm-ok');
+
+  const close = () => {
+    overlay.remove();
+  };
+
+  cancelBtn.addEventListener('click', close);
+  okBtn.addEventListener('click', () => {
+    close();
+    onConfirm();
+  });
+}
+
 async function updateCandidateStatus(candId, newStatus) {
   const candidate = AppState.candidates.find(c => c.id === candId);
   if (!candidate) return;
 
-  const patchData = {};
   if (newStatus === 'Rejected') {
-    patchData.remarks = 'Rejected';
-  } else if (newStatus === 'Hired') {
-    patchData.remarks = 'Hired';
-  } else if (newStatus === 'Functional') {
-    patchData.functional_status = 'scheduled';
-    patchData.functional_score = null;
-    patchData.cheat_probability = null;
-    patchData.remarks = null;
-  } else if (newStatus === 'Screening') {
-    patchData.screening_status = 'completed';
-    if (candidate.interviewScore === null || candidate.interviewScore === '—') {
-      patchData.screening_score = Math.floor(Math.random() * 31) + 60;
-    }
-    patchData.functional_status = null;
-    patchData.remarks = null;
-  } else if (newStatus === 'Resume') {
+    showThemedConfirm(
+      'Reject & Delete Candidate',
+      'Are you sure you want to reject the applicant?',
+      async () => {
+        try {
+          const res = await apiFetch(`/api/jobs/applicants/${candId}`, {
+            method: 'DELETE'
+          });
+          if (res) {
+            await loadStateFromBackend();
+            showPremiumToast(`${candidate.name} has been permanently deleted.`, 'success');
+            soundEngine.playChime([392, 293.66], 0.2, 0.1);
+          }
+        } catch (err) {
+          console.error(err);
+          showPremiumToast('Failed to delete candidate.', 'error');
+        }
+      }
+    );
+    return;
+  }
+
+  if (newStatus === 'Screening' || newStatus === 'Functional' || newStatus === 'Hired') {
+    const actionLabel = newStatus === 'Hired' ? 'Hire' : 'Advance';
+    showThemedConfirm(
+      `${actionLabel} Candidate`,
+      'Are you sure you want to advance the applicant?',
+      async () => {
+        const patchData = {};
+        if (newStatus === 'Hired') {
+          patchData.remarks = 'Hired';
+        } else if (newStatus === 'Functional') {
+          patchData.functional_status = 'scheduled';
+          patchData.functional_score = null;
+          patchData.cheat_probability = null;
+          patchData.remarks = null;
+        } else if (newStatus === 'Screening') {
+          patchData.screening_status = 'completed';
+          if (candidate.interviewScore === null || candidate.interviewScore === '—') {
+            patchData.screening_score = Math.floor(Math.random() * 31) + 60;
+          }
+          patchData.functional_status = null;
+          patchData.remarks = null;
+        }
+
+        try {
+          const updated = await apiFetch(`/api/jobs/applicants/${candId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patchData)
+          });
+
+          if (updated) {
+            await loadStateFromBackend();
+            if (newStatus === 'Hired') {
+              showPremiumToast(`Congratulations! ${candidate.name} has been marked as Hired.`, 'success');
+              soundEngine.playChime([523.25, 659.25, 783.99, 1046.50], 0.25, 0.08);
+            } else {
+              showPremiumToast(`${candidate.name} advanced to ${newStatus}.`, 'success');
+              soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
+            }
+          } else {
+            throw new Error("Failed to update candidate status");
+          }
+        } catch (e) {
+          console.error("Failed to update candidate status:", e);
+          showPremiumToast(`Error: ${e.message}`, "error");
+        }
+      },
+      actionLabel
+    );
+    return;
+  }
+
+  const patchData = {};
+  if (newStatus === 'Resume') {
     patchData.screening_status = null;
     patchData.functional_status = null;
     patchData.remarks = null;
@@ -8393,17 +8658,8 @@ async function updateCandidateStatus(candId, newStatus) {
 
     if (updated) {
       await loadStateFromBackend();
-
-      if (newStatus === 'Rejected') {
-        showPremiumToast(`${candidate.name} has been rejected from the pipeline.`, 'success');
-        soundEngine.playChime([392, 293.66], 0.2, 0.1);
-      } else if (newStatus === 'Hired') {
-        showPremiumToast(`Congratulations! ${candidate.name} has been marked as Hired.`, 'success');
-        soundEngine.playChime([523.25, 659.25, 783.99, 1046.50], 0.25, 0.08);
-      } else {
-        showPremiumToast(`${candidate.name} advanced to ${newStatus}.`, 'success');
-        soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
-      }
+      showPremiumToast(`${candidate.name} advanced to ${newStatus}.`, 'success');
+      soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
     } else {
       throw new Error("Failed to update candidate status");
     }
@@ -8837,6 +9093,20 @@ async function loadStateFromBackend() {
     }
     renderAnalyticsTable();
     renderTeamTable();
+
+    if (AppState.activeJobId) {
+      const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+      if (activeJob) {
+        renderFunnelStages(activeJob);
+        renderFunnelInsights(activeJob);
+        renderJobDetailPanes(activeJob);
+        const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
+          c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName
+        );
+        drawFunnelSVG(activeJob, jobCandidates);
+        drawScoreDistributionSVG(activeJob, jobCandidates);
+      }
+    }
   } catch (e) {
     console.warn("Critical error loading state from backend:", e);
     showPremiumToast("Backend database connection failed. Running in offline/mock mode.", "error");

@@ -85,19 +85,35 @@ def parse_resume_local_heuristics(file_text: str, filename: str) -> Dict[str, An
     if phone_match:
         phone = phone_match.group(0).strip()
         
-    # 3. Guess name from file text or clean filename
+    # 3. Guess name from file text or email or clean filename
     name = None
     if file_text:
-        # Check first 3 lines of text
-        lines = [l.strip() for l in file_text.split(" ") if l.strip()]
-        # Check if the first 2-3 words are capitalized
+        # Check first 15 words for capitalized candidate names
+        words = [w.strip() for w in file_text.split(" ") if w.strip()]
         capitalized = []
-        for word in lines[:6]:
+        forbidden_words = {
+            "resume", "cv", "curriculum", "vitae", "pdf", "docx", "graduation", "university",
+            "experience", "education", "school", "college", "summary", "skills", "projects",
+            "work", "profile", "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+            "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+            "contact", "phone", "email", "address", "links", "about", "me", "hobbies",
+            "certifications", "languages", "gpa", "cgpa", "phone:", "email:"
+        }
+        for word in words[:15]:
             clean_word = re.sub(r"[^\w]", "", word)
-            if clean_word and clean_word[0].isupper() and clean_word.lower() not in ["resume", "cv", "curriculum", "vitae", "pdf", "docx"]:
-                capitalized.append(clean_word)
+            if clean_word and clean_word[0].isupper() and clean_word.lower() not in forbidden_words:
+                if not re.search(r"\d", clean_word):
+                    capitalized.append(clean_word)
         if len(capitalized) >= 2:
             name = " ".join(capitalized[:3])
+            
+    if not name and email:
+        username = email.split("@")[0]
+        clean_user = re.sub(r"\d+", "", username)
+        clean_user = clean_user.replace(".", " ").replace("_", " ").replace("-", " ").strip()
+        if clean_user:
+            name = " ".join([w.capitalize() for w in clean_user.split()])
             
     if not name:
         name = clean_filename_to_name(filename)

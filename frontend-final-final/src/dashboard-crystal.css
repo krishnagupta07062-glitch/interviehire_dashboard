@@ -9026,6 +9026,7 @@ body.light-theme .q-card-footer {
   color: var(--color-text-muted);
   line-height: 1.6;
   margin: 0;
+  white-space: pre-wrap;
 }
 
 /* Application Fields */
