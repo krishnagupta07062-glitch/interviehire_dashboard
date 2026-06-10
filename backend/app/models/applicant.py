@@ -63,6 +63,8 @@ class Applicant(Base):
     recruiter_screening = Column(String, nullable=True)
     recruiter_screening_score = Column(Float, nullable=True)
     attempted_at = Column(DateTime(timezone=True), nullable=True)
+    match_score = Column(Float, nullable=True)
+    resume_analysis_report = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

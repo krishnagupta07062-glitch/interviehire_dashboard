@@ -154,6 +154,8 @@ class JobSettingsIn(BaseModel):
     custom_job_id: Optional[str] = None
     tags: Optional[List[str]] = None
     status: Optional[JobStatus] = None
+    job_type: Optional[str] = None
+    location: Optional[str] = None
  
 class JobCreateIn(BaseModel):
     title: str
@@ -184,6 +186,8 @@ class ApplicantOut(BaseModel):
     phone: Optional[str]
     source: Optional[ApplicantSource]
     remarks: Optional[str]
+    match_score: Optional[float] = None
+    resume_analysis_report: Optional[str] = None
  
     # Screening
     screening_status: Optional[InterviewStatus]
@@ -227,6 +231,8 @@ class ApplicantUpdateIn(BaseModel):
     recruiter_screening_score: Optional[float] = None
     attempted_at: Optional[datetime] = None
     remarks: Optional[str] = None
+    match_score: Optional[float] = None
+    resume_analysis_report: Optional[str] = None
  
 class CollaboratorIn(BaseModel):
     user_id: UUID

@@ -13,7 +13,7 @@ export default function DashboardGlassClient() {
     return () => {
       if (cleanup) cleanup();
     };
-  }, [router]);
+  }, []);
 
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 }

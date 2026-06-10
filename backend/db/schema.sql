@@ -69,6 +69,8 @@ CREATE TABLE applicants (
     functional_scheduled_at TIMESTAMP WITH TIME ZONE,
     cheat_probability cheat_probability,
     report_url VARCHAR,
+    match_score FLOAT,
+    resume_analysis_report TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -2777,9 +2777,34 @@ const CandidateReviews = {
 };
 
 function openCandidateReport(candidateId) {
+  // If the drawer elements for the advanced report exist, use it!
+  const hasAdvancedDrawer = document.getElementById('report-rubric-list') || document.getElementById('rep-tab-score');
+  if (hasAdvancedDrawer) {
+    openReportDrawerForCandidate(candidateId);
+    return;
+  }
+
   const candidate = AppState.candidates.find(c => c.id === candidateId);
   if (!candidate) return;
   
+  // Reset tabs and contents for legacy/default/glass layout
+  const tabContainer = document.querySelector('#drawer-report .report-tabs');
+  if (tabContainer) {
+    tabContainer.innerHTML = `
+      <button class="report-tab-btn active" data-report-tab="rubric">Evaluation Rubrics</button>
+      <button class="report-tab-btn" data-report-tab="code">Expert Code Review</button>
+    `;
+  }
+  const drawerReport = document.getElementById('drawer-report');
+  const contents = drawerReport.querySelectorAll('.report-tab-content');
+  contents.forEach(ct => {
+    if (ct.id === 'rep-tab-rubric') {
+      ct.classList.add('active');
+    } else {
+      ct.classList.remove('active');
+    }
+  });
+
   // Set data details
   document.getElementById('report-name').textContent = candidate.name;
   document.getElementById('report-email').textContent = candidate.email;
@@ -2834,160 +2859,395 @@ function openCandidateReport(candidateId) {
   const overlay = document.getElementById('drawer-backdrop');
   overlay.classList.add('active');
   
-  const drawerReport = document.getElementById('drawer-report');
-  drawerReport.classList.add('active');
-  drawerReport.style.right = '0';
+  if (drawerReport) {
+    drawerReport.classList.add('active');
+    drawerReport.style.right = '0';
+  }
   
   soundEngine.playChime([392.00, 523.25, 659.25], 0.15, 0.08);
 }
 
-function openReportDrawerForCandidate(candidateId) {
+function openReportDrawerForCandidate(candidateId, forceReportType = null) {
   const candidate = AppState.candidates.find(c => c.id === candidateId);
   if (!candidate) return;
 
   document.getElementById('report-name').textContent = candidate.name;
   document.getElementById('report-email').textContent = candidate.email;
   document.getElementById('report-job').textContent = candidate.jobApplied;
-  document.getElementById('report-score').textContent = candidate.score;
+
+  const isResumeReport = forceReportType === 'resume' || (forceReportType === null && candidate.status === 'Resume');
+  
+  if (isResumeReport) {
+    const cached = resumeAnalysisCache[candidateId];
+    const scoreVal = cached ? (cached.matchScore ?? cached.overallScore) : (candidate.matchScore !== null && candidate.matchScore !== undefined ? candidate.matchScore : 0);
+    document.getElementById('report-score').textContent = scoreVal;
+  } else {
+    document.getElementById('report-score').textContent = candidate.score;
+  }
+
   const initials = candidate.name.split(' ').map(n => n[0]).join('');
   document.getElementById('report-avatar').textContent = initials;
 
-  const numericScore = parseFloat(candidate.score) || 80;
-  const rubrics = [
-    { label: 'Coding Proficiency', score: (numericScore / 10).toFixed(1) },
-    { label: 'System Design', score: ((numericScore - 4 - Math.random() * 4) / 10).toFixed(1) },
-    { label: 'Communication', score: ((numericScore + 2 - Math.random() * 4) / 10).toFixed(1) },
-    { label: 'Problem Solving', score: ((numericScore - 2 - Math.random() * 3) / 10).toFixed(1) },
-  ];
+  const drawerTitle = document.querySelector('#drawer-report .drawer-title');
+  const tabContainer = document.querySelector('#drawer-report .report-tabs');
+  
+  const repTabScore = document.getElementById('rep-tab-score');
+  const repTabTranscript = document.getElementById('rep-tab-transcript');
+  const repTabCaveats = document.getElementById('rep-tab-caveats');
+  const repTabActions = document.getElementById('rep-tab-actions');
 
-  const rubricListEl = document.getElementById('report-rubric-list');
-  if (rubricListEl) {
-    rubricListEl.innerHTML = rubrics.map(r => `
-      <div class="rubric-item">
-        <div class="rubric-meta"><span>${r.label}</span><strong class="val">${r.score} / 10</strong></div>
-        <div class="bar-outer"><div class="bar-inner" style="width: ${r.score * 10}%;"></div></div>
-      </div>
-    `).join('');
-  }
-
-  // Clear/show loading state for vetting components
-  const transcriptFlow = document.getElementById('report-transcript-flow');
-  if (transcriptFlow) {
-    transcriptFlow.innerHTML = `
-      <div class="transcript-chat-line" style="justify-content: center; opacity: 0.7;">
-        <span class="chat-text-bubble">Loading AI vetting report transcript...</span>
-      </div>
-    `;
-  }
-  const caveatsBody = document.getElementById('report-caveats-body');
-  if (caveatsBody) {
-    caveatsBody.innerHTML = `
-      <div style="padding: 24px; text-align: center; opacity: 0.7;">
-        <span class="caveat-text">Retrieving latest proctoring logs & scores...</span>
-      </div>
-    `;
-  }
-
-  function renderVetting(vettingData) {
-    // Render report link if present
-    const reportJobEl = document.getElementById('report-job');
-    if (reportJobEl) {
-      const rUrl = candidate.reportUrl || vettingData.reportUrl;
-      if (rUrl) {
-        let fullUrl = rUrl;
-        if (rUrl.startsWith('/')) {
-          fullUrl = `http://localhost:4000${rUrl}`;
-        }
-        reportJobEl.innerHTML = `${candidate.jobApplied} &bull; <a href="${fullUrl}" target="_blank" class="pdf-report-link" style="color: var(--color-gold); text-decoration: underline; font-weight: 500; cursor: pointer;">Download AI Report (PDF) 📄</a>`;
-      } else {
-        reportJobEl.textContent = candidate.jobApplied;
-      }
+  if (isResumeReport) {
+    if (drawerTitle) drawerTitle.textContent = "Resume Analysis Report";
+    if (tabContainer) {
+      tabContainer.innerHTML = `
+        <button class="report-tab-btn active" data-report-tab="score">Analysis Overview</button>
+        <button class="report-tab-btn" data-report-tab="transcript">Criteria Checklist</button>
+        <button class="report-tab-btn" data-report-tab="caveats">Skills Breakdown</button>
+        <button class="report-tab-btn" data-report-tab="actions">ATS Scorecard</button>
+      `;
     }
 
-    if (transcriptFlow) {
-      if (!vettingData.transcript || vettingData.transcript.length === 0) {
-        transcriptFlow.innerHTML = `
-          <div class="transcript-chat-line" style="justify-content: center; opacity: 0.5;">
-            <span class="chat-text-bubble">No interview transcript available yet.</span>
+    const result = resumeAnalysisCache[candidateId] || {
+      matchScore: candidate.matchScore || 0,
+      summary: "Detailed criteria report is only stored in current session. Overall Match Score loaded from database.",
+      experienceYears: "N/A",
+      skills: { detected: [], matched: [], missing: [] },
+      scorecard: { technical: 0, experience: 0, communication: 0, cultureFit: 0 },
+      recommendation: "Hold",
+      recommendationReason: "N/A",
+      mustHaveMatches: [],
+      goodToHaveMatches: [],
+      redFlagsDetected: []
+    };
+
+    // 1. Overview tab
+    if (repTabScore) {
+      const recColor = result.recommendation === 'Advance' ? '#22c55e' : result.recommendation === 'Reject' ? '#ef4444' : 'var(--color-gold)';
+      repTabScore.innerHTML = `
+        <div style="padding: 20px; font-family: var(--font-body), sans-serif;">
+          <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 18px; border-radius: 8px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0; color: var(--color-gold); font-size: 1rem; font-weight: 600;">Professional Summary</h4>
+            <p style="margin: 0; font-size: 0.9rem; line-height: 1.6; color: var(--color-text-secondary);">${result.summary}</p>
           </div>
-        `;
-      } else {
-        transcriptFlow.innerHTML = vettingData.transcript.map(line => {
-          let speakerClass = line.speaker.toLowerCase();
-          if (speakerClass === 'ai interviewer') {
-            speakerClass = 'lina';
-          } else if (speakerClass === 'candidate') {
-            speakerClass = 'candidate';
-          } else {
-            speakerClass = 'lina'; // default
-          }
-          return `
-            <div class="transcript-chat-line chat-speaker-${speakerClass}">
-              <span class="chat-speaker-badge">${line.speaker}:</span>
-              <span class="chat-text-bubble">${line.text}</span>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+            <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+              <h5 style="margin: 0 0 8px 0; color: var(--color-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Years of Experience</h5>
+              <span style="font-size: 1.25rem; font-weight: 600; color: var(--color-text-primary);">${result.experienceYears || 'N/A'}</span>
             </div>
-          `;
-        }).join('');
-      }
-    }
-
-    if (caveatsBody) {
-      const rubricRows = (vettingData.rubrics || []).map(r => `
-        <div class="rubric-row">
-          <span class="rubric-lbl">${r.label}</span>
-          <div class="rubric-bar-track"><div class="rubric-bar-fill indigo" style="width: ${r.score * 10}%"></div></div>
-          <span class="rubric-val">${r.score}/10</span>
-        </div>
-      `).join('');
-      const caveatTags = (vettingData.caveats || []).map(cav => `
-        <div class="caveat-tag ${cav.type}">
-          <span class="caveat-icon">${cav.type === 'warning' ? '⚠️' : '💡'}</span>
-          <span class="caveat-text">${cav.text}</span>
-        </div>
-      `).join('');
-      
-      const prosList = (vettingData.pros || []).map(p => `<li><span class="list-bullet pro">✓</span>${p}</li>`).join('');
-      const consList = (vettingData.cons || []).map(cn => `<li><span class="list-bullet con">✗</span>${cn}</li>`).join('');
-
-      caveatsBody.innerHTML = `
-        <div class="rubrics-section">
-          <span class="section-sub-title">AI Vetting Scorecard</span>
-          ${rubricRows || '<p class="type-caption" style="opacity:0.5; padding: 8px 0;">No scorecard rubrics available yet.</p>'}
-        </div>
-        <div class="caveats-section">
-          <span class="section-sub-title">AI Caveats & Flags</span>
-          <div class="caveats-list-tags">
-            ${caveatTags || '<span class="type-caption" style="opacity:0.5; padding: 8px 0;">No caveats/flags recorded.</span>'}
+            <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+              <h5 style="margin: 0 0 8px 0; color: var(--color-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Recommendation</h5>
+              <span style="font-size: 1.25rem; font-weight: 600; color: ${recColor};">${result.recommendation || 'Hold'}</span>
+            </div>
           </div>
-        </div>
-        <div class="pros-cons-grid">
-          <div class="pro-col">
-            <span class="section-sub-title pros">Pros</span>
-            <ul>${prosList || '<li style="opacity:0.5;">No pros listed yet.</li>'}</ul>
-          </div>
-          <div class="con-col">
-            <span class="section-sub-title cons">Cons</span>
-            <ul>${consList || '<li style="opacity:0.5;">No cons listed yet.</li>'}</ul>
+
+          <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 18px; border-radius: 8px;">
+            <h4 style="margin: 0 0 10px 0; color: var(--color-text-primary); font-size: 0.95rem; font-weight: 600;">Recommendation Rationale</h4>
+            <p style="margin: 0; font-size: 0.88rem; line-height: 1.5; color: var(--color-text-secondary);">${result.recommendationReason || 'N/A'}</p>
           </div>
         </div>
       `;
     }
-  }
 
-  // Fetch live vetting details
-  apiFetch(`/api/jobs/applicants/${candidateId}/functional-vetting`)
-    .then(data => {
-      if (data) {
-        renderVetting(data);
-      } else {
-        throw new Error("Empty vetting response");
+    // 2. Criteria Checklist tab
+    if (repTabTranscript) {
+      const mustHaveHTML = (result.mustHaveMatches || []).map(m => `
+        <div style="display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: flex-start;">
+          <span style="color: ${m.met ? '#22c55e' : '#ef4444'}; font-size: 1.1rem; line-height: 1;">${m.met ? '✓' : '✗'}</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 500; font-size: 0.88rem; color: var(--color-text-primary);">${m.criteria}</div>
+            <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 2px;">${m.reason}</div>
+          </div>
+        </div>
+      `).join('') || '<div style="opacity: 0.5; font-size: 0.85rem; padding: 10px 0;">No must-have criteria configured.</div>';
+
+      const goodToHaveHTML = (result.goodToHaveMatches || []).map(g => `
+        <div style="display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: flex-start;">
+          <span style="color: ${g.met ? '#22c55e' : '#9ca3af'}; font-size: 1.1rem; line-height: 1;">${g.met ? '✓' : '○'}</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 500; font-size: 0.88rem; color: var(--color-text-primary);">${g.criteria}</div>
+            <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 2px;">${g.reason}</div>
+          </div>
+        </div>
+      `).join('') || '<div style="opacity: 0.5; font-size: 0.85rem; padding: 10px 0;">No good-to-have criteria configured.</div>';
+
+      const redFlagsHTML = (result.redFlagsDetected || []).map(r => `
+        <div style="display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: flex-start;">
+          <span style="color: ${r.detected ? '#ef4444' : '#22c55e'}; font-size: 1.1rem; line-height: 1;">${r.detected ? '⚠️' : '✓'}</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 500; font-size: 0.88rem; color: var(--color-text-primary);">${r.flag}</div>
+            <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 2px;">${r.detected ? r.reason : 'Not detected in resume.'}</div>
+          </div>
+        </div>
+      `).join('') || '<div style="opacity: 0.5; font-size: 0.85rem; padding: 10px 0;">No red flags configured.</div>';
+
+      repTabTranscript.innerHTML = `
+        <div style="padding: 20px; max-height: 500px; overflow-y: auto;">
+          <h4 style="margin: 0 0 10px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Must-Have Criteria</h4>
+          <div style="margin-bottom: 24px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 12px 16px; border-radius: 8px;">
+            ${mustHaveHTML}
+          </div>
+          
+          <h4 style="margin: 0 0 10px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Good-to-Have Criteria</h4>
+          <div style="margin-bottom: 24px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 12px 16px; border-radius: 8px;">
+            ${goodToHaveHTML}
+          </div>
+          
+          <h4 style="margin: 0 0 10px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Red Flags (Should Not Have)</h4>
+          <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 12px 16px; border-radius: 8px;">
+            ${redFlagsHTML}
+          </div>
+        </div>
+      `;
+    }
+
+    // 3. Skills Breakdown tab
+    if (repTabCaveats) {
+      const renderSkillTags = (skillsList, type) => {
+        const colors = type === 'matched' ? 'background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.3);' :
+                       type === 'missing' ? 'background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.3);' :
+                       'background: rgba(255,255,255,0.05); color: var(--color-text-secondary); border: 1px solid var(--glass-border);';
+        return (skillsList || []).map(s => `
+          <span style="display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; ${colors}">${s}</span>
+        `).join('') || '<span style="opacity:0.5; font-size:0.85rem;">None listed</span>';
+      };
+
+      repTabCaveats.innerHTML = `
+        <div style="padding: 20px; font-family: var(--font-body), sans-serif;">
+          <h4 style="margin: 0 0 12px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Matched Skills</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+            ${renderSkillTags(result.skills?.matched, 'matched')}
+          </div>
+          
+          <h4 style="margin: 0 0 12px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Missing Skills</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+            ${renderSkillTags(result.skills?.missing, 'missing')}
+          </div>
+          
+          <h4 style="margin: 0 0 12px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">All Detected Skills</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+            ${renderSkillTags(result.skills?.detected, 'detected')}
+          </div>
+        </div>
+      `;
+    }
+
+    // 4. ATS Scorecard tab
+    if (repTabActions) {
+      const scorecard = result.scorecard || { technical: 0, experience: 0, communication: 0, cultureFit: 0 };
+      const metrics = [
+        { label: 'Technical Core Fit', val: scorecard.technical || 0 },
+        { label: 'Experience Fit', val: scorecard.experience || 0 },
+        { label: 'Communication Competency', val: scorecard.communication || 0 },
+        { label: 'Culture & Values Fit', val: scorecard.cultureFit || 0 }
+      ];
+
+      repTabActions.innerHTML = `
+        <div style="padding: 20px; font-family: var(--font-body), sans-serif;">
+          <h4 style="margin: 0 0 16px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">ATS Attribute Scorecard</h4>
+          <div style="display: flex; flex-direction: column; gap: 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 20px; border-radius: 8px;">
+            ${metrics.map(m => `
+              <div class="rubric-item" style="margin: 0;">
+                <div class="rubric-meta" style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.88rem;">
+                  <span style="color: var(--color-text-secondary);">${m.label}</span>
+                  <strong style="color: var(--color-text-primary); font-weight: 600;">${Number(m.val).toFixed(1)} / 10</strong>
+                </div>
+                <div class="bar-outer" style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+                  <div class="bar-inner" style="width: ${m.val * 10}%; height: 100%; background: var(--color-gold); border-radius: 3px;"></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+  } else {
+    if (drawerTitle) drawerTitle.textContent = "Vetting Report";
+    if (tabContainer) {
+      tabContainer.innerHTML = `
+        <button class="report-tab-btn active" data-report-tab="score">Score</button>
+        <button class="report-tab-btn" data-report-tab="transcript">Transcription & Audio</button>
+        <button class="report-tab-btn" data-report-tab="caveats">Scores & Caveats</button>
+        <button class="report-tab-btn" data-report-tab="actions">Notes & Actions</button>
+      `;
+    }
+
+    if (repTabScore) {
+      repTabScore.innerHTML = `<div class="rubric-list" id="report-rubric-list"></div>`;
+    }
+    if (repTabTranscript) {
+      repTabTranscript.innerHTML = `
+        <div class="waveform-box">
+          <h4 class="waveform-title">Interview Audio Recording</h4>
+          <div class="waveform-controls">
+            <button class="btn-play-waveform" id="btn-play-wave" aria-label="Play Interview Snippet">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="play-svg"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pause-svg" style="display: none;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            </button>
+            <div class="waveform-viz" id="waveform-viz-bars"></div>
+            <span class="waveform-time" id="waveform-timer">0:00 / 0:12</span>
+          </div>
+        </div>
+        <div class="report-transcript-body" id="report-transcript-body">
+          <span class="transcript-label">AI Interview Transcript:</span>
+          <div class="transcript-chat-flow" id="report-transcript-flow"></div>
+        </div>
+      `;
+    }
+    if (repTabCaveats) {
+      repTabCaveats.innerHTML = `<div class="caveats-body" id="report-caveats-body"></div>`;
+    }
+    if (repTabActions) {
+      repTabActions.innerHTML = `
+        <div class="report-actions-body">
+          <span class="section-sub-title">Notes & Recommendation</span>
+          <div class="notes-textarea-wrap">
+            <textarea placeholder="Write recruiter notes here..."></textarea>
+          </div>
+          <div class="action-buttons-group">
+            <button class="btn-report-save-notes">Save Notes</button>
+          </div>
+        </div>
+      `;
+    }
+
+    const numericScore = parseFloat(candidate.score) || 80;
+    const rubrics = [
+      { label: 'Coding Proficiency', score: (numericScore / 10).toFixed(1) },
+      { label: 'System Design', score: ((numericScore - 4 - Math.random() * 4) / 10).toFixed(1) },
+      { label: 'Communication', score: ((numericScore + 2 - Math.random() * 4) / 10).toFixed(1) },
+      { label: 'Problem Solving', score: ((numericScore - 2 - Math.random() * 3) / 10).toFixed(1) },
+    ];
+
+    const rubricListEl = document.getElementById('report-rubric-list');
+    if (rubricListEl) {
+      rubricListEl.innerHTML = rubrics.map(r => `
+        <div class="rubric-item">
+          <div class="rubric-meta"><span>${r.label}</span><strong class="val">${r.score} / 10</strong></div>
+          <div class="bar-outer"><div class="bar-inner" style="width: ${r.score * 10}%;"></div></div>
+        </div>
+      `).join('');
+    }
+
+    // Clear/show loading state for vetting components
+    const transcriptFlow = document.getElementById('report-transcript-flow');
+    if (transcriptFlow) {
+      transcriptFlow.innerHTML = `
+        <div class="transcript-chat-line" style="justify-content: center; opacity: 0.7;">
+          <span class="chat-text-bubble">Loading AI vetting report transcript...</span>
+        </div>
+      `;
+    }
+    const caveatsBody = document.getElementById('report-caveats-body');
+    if (caveatsBody) {
+      caveatsBody.innerHTML = `
+        <div style="padding: 24px; text-align: center; opacity: 0.7;">
+          <span class="caveat-text">Retrieving latest proctoring logs & scores...</span>
+        </div>
+      `;
+    }
+
+    function renderVetting(vettingData) {
+      // Render report link if present
+      const reportJobEl = document.getElementById('report-job');
+      if (reportJobEl) {
+        const rUrl = candidate.reportUrl || vettingData.reportUrl;
+        if (rUrl) {
+          let fullUrl = rUrl;
+          if (rUrl.startsWith('/')) {
+            fullUrl = `http://localhost:4000${rUrl}`;
+          }
+          reportJobEl.innerHTML = `${candidate.jobApplied} &bull; <a href="${fullUrl}" target="_blank" class="pdf-report-link" style="color: var(--color-gold); text-decoration: underline; font-weight: 500; cursor: pointer;">Download AI Report (PDF) 📄</a>`;
+        } else {
+          reportJobEl.textContent = candidate.jobApplied;
+        }
       }
-    })
-    .catch(err => {
-      console.warn("Failed to fetch live vetting details, falling back to mock:", err);
-      const fallback = getCandidateVettingDetails(candidateId, candidate.name);
-      renderVetting(fallback);
-    });
+
+      if (transcriptFlow) {
+        if (!vettingData.transcript || vettingData.transcript.length === 0) {
+          transcriptFlow.innerHTML = `
+            <div class="transcript-chat-line" style="justify-content: center; opacity: 0.5;">
+              <span class="chat-text-bubble">No interview transcript available yet.</span>
+            </div>
+          `;
+        } else {
+          transcriptFlow.innerHTML = vettingData.transcript.map(line => {
+            let speakerClass = line.speaker.toLowerCase();
+            if (speakerClass === 'ai interviewer') {
+              speakerClass = 'lina';
+            } else if (speakerClass === 'candidate') {
+              speakerClass = 'candidate';
+            } else {
+              speakerClass = 'lina'; // default
+            }
+            return `
+              <div class="transcript-chat-line chat-speaker-${speakerClass}">
+                <span class="chat-speaker-badge">${line.speaker}:</span>
+                <span class="chat-text-bubble">${line.text}</span>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      if (caveatsBody) {
+        const rubricRows = (vettingData.rubrics || []).map(r => `
+          <div class="rubric-row">
+            <span class="rubric-lbl">${r.label}</span>
+            <div class="rubric-bar-track"><div class="rubric-bar-fill indigo" style="width: ${r.score * 10}%"></div></div>
+            <span class="rubric-val">${r.score}/10</span>
+          </div>
+        `).join('');
+        const caveatTags = (vettingData.caveats || []).map(cav => `
+          <div class="caveat-tag ${cav.type}">
+            <span class="caveat-icon">${cav.type === 'warning' ? '⚠️' : '💡'}</span>
+            <span class="caveat-text">${cav.text}</span>
+          </div>
+        `).join('');
+        
+        const prosList = (vettingData.pros || []).map(p => `<li><span class="list-bullet pro">✓</span>${p}</li>`).join('');
+        const consList = (vettingData.cons || []).map(cn => `<li><span class="list-bullet con">✗</span>${cn}</li>`).join('');
+
+        caveatsBody.innerHTML = `
+          <div class="rubrics-section">
+            <span class="section-sub-title">AI Vetting Scorecard</span>
+            ${rubricRows || '<p class="type-caption" style="opacity:0.5; padding: 8px 0;">No scorecard rubrics available yet.</p>'}
+          </div>
+          <div class="caveats-section">
+            <span class="section-sub-title">AI Caveats & Flags</span>
+            <div class="caveats-list-tags">
+              ${caveatTags || '<span class="type-caption" style="opacity:0.5; padding: 8px 0;">No caveats/flags recorded.</span>'}
+            </div>
+          </div>
+          <div class="pros-cons-grid">
+            <div class="pro-col">
+              <span class="section-sub-title pros">Pros</span>
+              <ul>${prosList || '<li style="opacity:0.5;">No pros listed yet.</li>'}</ul>
+            </div>
+            <div class="con-col">
+              <span class="section-sub-title cons">Cons</span>
+              <ul>${consList || '<li style="opacity:0.5;">No cons listed yet.</li>'}</ul>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Fetch live vetting details
+    apiFetch(`/api/jobs/applicants/${candidateId}/functional-vetting`)
+      .then(data => {
+        if (data) {
+          renderVetting(data);
+        } else {
+          throw new Error("Empty vetting response");
+        }
+      })
+      .catch(err => {
+        console.warn("Failed to fetch live vetting details, falling back to mock:", err);
+        const fallback = getCandidateVettingDetails(candidateId, candidate.name);
+        renderVetting(fallback);
+      });
+  }
 
   const actionsBody = document.getElementById('report-action-buttons');
   if (actionsBody) {
@@ -3041,6 +3301,20 @@ function openReportDrawerForCandidate(candidateId) {
 
   const tabs = drawerReport.querySelectorAll('.report-tab-btn');
   const contents = drawerReport.querySelectorAll('.report-tab-content');
+
+  // Align active content pane with active tab button on open
+  const activeTabBtn = drawerReport.querySelector('.report-tab-btn.active');
+  if (activeTabBtn) {
+    const activeTabName = activeTabBtn.getAttribute('data-report-tab');
+    contents.forEach(ct => {
+      if (ct.id === `rep-tab-${activeTabName}`) {
+        ct.classList.add('active');
+      } else {
+        ct.classList.remove('active');
+      }
+    });
+  }
+
   tabs.forEach(t => {
     t.addEventListener('click', () => {
       tabs.forEach(tb => tb.classList.remove('active'));
@@ -3362,27 +3636,94 @@ function renderJobFlowConfig(job, stageKey) {
   }
 }
 
+// ==========================================
+// CAREER PAGE CONFIG
+// ==========================================
+
+// Default application form fields pool
+const DEFAULT_APP_FORM_FIELDS = [
+  { name: 'Current Location', enabled: true, required: true },
+  { name: 'Home Location', enabled: false, required: false },
+  { name: 'Expected CTC', enabled: true, required: false },
+  { name: 'Current CTC', enabled: false, required: false },
+  { name: 'Notice Period', enabled: true, required: false },
+  { name: 'Joining Date', enabled: false, required: false },
+];
+
+function normalizeApplicationFields(raw) {
+  if (!raw || !raw.length) return JSON.parse(JSON.stringify(DEFAULT_APP_FORM_FIELDS));
+  // If already objects, return as-is
+  if (typeof raw[0] === 'object') return raw.map(f => ({ name: f.name, enabled: f.enabled !== false, required: !!f.required }));
+  // If strings, migrate to object format
+  return raw.map(name => ({ name, enabled: true, required: false }));
+}
+
 function renderCareerPageConfig(job, panel) {
-  const fields = job.applicationFields || ['Current Location', 'Expected CTC', 'Notice Period'];
+  // Normalize fields to object format
+  job.applicationFormFields = normalizeApplicationFields(job.applicationFormFields || job.applicationFields);
+  const fields = job.applicationFormFields;
+  const enabledFields = fields.filter(f => f.enabled);
   const isEditing = panel.dataset.cpEditing === 'true';
 
+  function renderDescriptionHTML(descText) {
+    if (!descText) return '<p class="jf-jd-desc">No description provided.</p>';
+    // Parse structured description into sections with bullets
+    const lines = descText.split('\n').map(l => l.trim());
+    let html = '';
+    let inBulletList = false;
+    const sectionKeywords = /^(job overview|key responsibilities|responsibilities|requirements|qualifications|about|skills|what you.ll do|what we.re looking for|nice to have|benefits)/i;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) {
+        if (inBulletList) { html += '</ul>'; inBulletList = false; }
+        continue;
+      }
+      // Check if it looks like a section heading
+      if (sectionKeywords.test(line) && line.length < 60) {
+        if (inBulletList) { html += '</ul>'; inBulletList = false; }
+        html += `<h5 class="jf-jd-section-heading">${line}</h5>`;
+        continue;
+      }
+      // Check if it's a bullet point
+      const bulletMatch = line.match(/^[-•*]\s+(.+)/);
+      if (bulletMatch) {
+        if (!inBulletList) { html += '<ul class="jf-jd-bullet-list">'; inBulletList = true; }
+        html += `<li>${bulletMatch[1]}</li>`;
+        continue;
+      }
+      // Regular paragraph
+      if (inBulletList) { html += '</ul>'; inBulletList = false; }
+      html += `<p class="jf-jd-desc">${line}</p>`;
+    }
+    if (inBulletList) html += '</ul>';
+    return html;
+  }
+
   panel.innerHTML = `
-    <div class="jf-config-header">
-      <div class="jf-config-header-left">
+    <div class="cp-page-header">
+      <div class="cp-page-header-left">
         <h2 class="jf-config-title">Career Page</h2>
-        <p class="jf-config-subtitle">Publish your job and let AI screen every application instantly</p>
+        <svg class="cp-info-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
       </div>
-      <div class="jf-config-header-actions">
-        <button class="btn-jf-edit" id="btn-cp-edit">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          ${isEditing ? 'Save' : 'Edit'}
+      <div class="cp-page-header-right">
+        <button class="btn-cp-preview" id="btn-cp-preview">
+          Preview
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 0 2 2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </button>
+        <button class="btn-cp-app-form" id="btn-cp-app-form">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Application Form
         </button>
       </div>
     </div>
 
     <div class="jf-section">
-      <div class="jf-section-header">
-        <h3 class="jf-section-title" style="color: var(--color-gold);">Job Description</h3>
+      <div class="cp-section-header">
+        <h3 class="cp-section-title">Job Description</h3>
+        <button class="btn-cp-jd-edit" id="btn-cp-edit">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ${isEditing ? 'Save' : 'Edit'}
+        </button>
       </div>
       <div class="jf-jd-card">
         ${isEditing ? `
@@ -3391,8 +3732,8 @@ function renderCareerPageConfig(job, panel) {
             <input type="text" class="jf-edit-input" id="cp-edit-title" value="${(job.cardName || job.roleName || '').replace(/"/g, '&quot;')}" />
           </div>
           <div class="jf-edit-field">
-            <label class="jf-edit-label">Role Name</label>
-            <input type="text" class="jf-edit-input" id="cp-edit-role" value="${(job.roleName || '').replace(/"/g, '&quot;')}" />
+            <label class="jf-edit-label">Company / Created By</label>
+            <input type="text" class="jf-edit-input" id="cp-edit-creator" value="${(job.createdBy || 'Akross').replace(/"/g, '&quot;')}" />
           </div>
           <div class="jf-edit-field">
             <label class="jf-edit-label">Experience Band</label>
@@ -3403,89 +3744,89 @@ function renderCareerPageConfig(job, panel) {
             </select>
           </div>
           <div class="jf-edit-field">
+            <label class="jf-edit-label">Employment Type</label>
+            <select class="jf-edit-input" id="cp-edit-emptype">
+              ${['Full-Time', 'Part-Time', 'Contract', 'Internship', 'Freelance'].map(o =>
+                `<option ${(job.employmentType || 'Full-Time') === o ? 'selected' : ''}>${o}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="jf-edit-field">
+            <label class="jf-edit-label">Location</label>
+            <input type="text" class="jf-edit-input" id="cp-edit-location" value="${(job.location || '').replace(/"/g, '&quot;')}" placeholder="e.g. New York, NY, USA" />
+          </div>
+          <div class="jf-edit-field">
             <label class="jf-edit-label">Job Description</label>
-            <textarea class="jf-edit-textarea" id="cp-edit-desc" rows="6">${job.description || ''}</textarea>
+            <textarea class="jf-edit-textarea" id="cp-edit-desc" rows="12" placeholder="Use headings like 'Job overview', 'Key responsibilities', 'Requirements' followed by bullet points starting with -">${job.description || ''}</textarea>
           </div>
         ` : `
           <h4 class="jf-jd-title">${job.cardName || job.roleName}</h4>
-          <div class="jf-jd-meta">
-            <span><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg> ${job.createdBy || 'Akross'}</span>
-            <span class="jf-jd-badge">${job.experienceBand || 'Fresher'}</span>
-          </div>
-          ${(() => {
-            const descText = job.description || 'No description provided.';
-            const doubleNewlineIndex = descText.indexOf('\n\n');
-            let summary = '';
-            let desc = descText;
-            if (doubleNewlineIndex !== -1) {
-              summary = descText.slice(0, doubleNewlineIndex).trim();
-              desc = descText.slice(doubleNewlineIndex).trim();
-            } else {
-              const sentences = descText.match(/[^.!?]+[.!?]+/g) || [descText];
-              if (sentences.length > 2) {
-                summary = sentences.slice(0, 2).join(' ').trim();
-                desc = sentences.slice(2).join(' ').trim();
-              } else {
-                summary = descText;
-                desc = '';
-              }
-            }
-            return `
-              <h5 style="color: var(--color-gold); margin: 16px 0 8px; font-size: 0.85rem;">Job overview</h5>
-              <p class="jf-jd-desc" style="margin-bottom: 20px;">${summary}</p>
-              ${desc ? `
-                <h5 style="color: var(--color-gold); margin: 16px 0 8px; font-size: 0.85rem;">Job description</h5>
-                <p class="jf-jd-desc">${desc}</p>
+          <div class="cp-jd-meta-row">
+            <div class="cp-jd-meta-left">
+              <span class="cp-jd-meta-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                ${job.createdBy || 'Akross'}
+              </span>
+              ${job.location ? `
+              <span class="cp-jd-meta-dot">•</span>
+              <span class="cp-jd-meta-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                ${job.location}
+              </span>
               ` : ''}
-            `;
-          })()}
+            </div>
+          </div>
+          <div class="cp-jd-badges">
+            <span class="cp-jd-badge-pill">${job.employmentType || 'Full-Time'}</span>
+            <span class="cp-jd-badge-pill">${job.experienceBand || 'Fresher'}</span>
+          </div>
+          ${renderDescriptionHTML(job.description)}
         `}
       </div>
     </div>
 
     <div class="jf-section">
-      <div class="jf-section-header">
+      <div class="cp-app-fields-header">
+        <div class="cp-app-fields-icon-wrap">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </div>
         <div>
-          <h3 class="jf-section-title" style="display: flex; align-items: center; gap: 8px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            Application Form Fields
-          </h3>
-          <p style="font-size: 0.76rem; color: var(--color-text-muted); margin: 2px 0 0 0;">Fields candidates will fill out during application</p>
+          <h3 class="cp-app-fields-title">Application Form Fields</h3>
+          <p class="cp-app-fields-subtitle">Fields candidates will fill out during application</p>
         </div>
       </div>
-      <div class="jf-fields-header">Enabled Fields (${fields.length})</div>
-      <div class="jf-fields-list">
-        ${fields.map((f, i) => `
-          <div class="jf-field-item">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            ${isEditing
-              ? `<input type="text" class="jf-edit-input jf-field-edit" value="${f.replace(/"/g, '&quot;')}" data-idx="${i}" style="flex:1;" />
-                 <button class="btn-jf-remove-field" data-idx="${i}" title="Remove">×</button>`
-              : `<span>${f}</span>`}
+      <div class="cp-enabled-fields-label">Enabled Fields (${enabledFields.length})</div>
+      <div class="cp-enabled-fields-list" id="cp-enabled-fields-list">
+        ${enabledFields.length > 0 ? enabledFields.map(f => `
+          <div class="cp-enabled-field-row">
+            <span class="cp-enabled-field-check">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span class="cp-enabled-field-name">${f.name}</span>
+            ${f.required ? `<span class="cp-field-required-badge">Required</span>` : ''}
           </div>
-        `).join('')}
-        ${isEditing ? `<button class="btn-jf-add-field" id="btn-cp-add-field" style="margin-top:6px;">+ Add Field</button>` : ''}
+        `).join('') : `<p style="font-size:0.8rem;color:var(--color-text-muted);padding:12px 0;">No fields enabled. Click "Application Form" to configure.</p>`}
       </div>
     </div>
   `;
 
+  // Edit (JD) button handler
   const editBtn = document.getElementById('btn-cp-edit');
   if (editBtn) {
     editBtn.addEventListener('click', async () => {
       if (isEditing) {
         const newTitle = document.getElementById('cp-edit-title')?.value.trim();
-        const newRole = document.getElementById('cp-edit-role')?.value.trim();
+        const newCreator = document.getElementById('cp-edit-creator')?.value.trim();
         const newExp = document.getElementById('cp-edit-exp')?.value;
+        const newEmpType = document.getElementById('cp-edit-emptype')?.value;
+        const newLocation = document.getElementById('cp-edit-location')?.value.trim();
         const newDesc = document.getElementById('cp-edit-desc')?.value.trim();
         if (newTitle) job.cardName = newTitle;
-        if (newRole) job.roleName = newRole;
+        if (newCreator) job.createdBy = newCreator;
         if (newExp) job.experienceBand = newExp;
+        if (newEmpType) job.employmentType = newEmpType;
+        job.location = newLocation || '';
         job.description = newDesc || '';
-        const editedFields = [];
-        panel.querySelectorAll('.jf-field-edit').forEach(input => {
-          if (input.value.trim()) editedFields.push(input.value.trim());
-        });
-        if (editedFields.length) job.applicationFields = editedFields;
 
         // Persist to backend
         try {
@@ -3494,15 +3835,15 @@ function renderCareerPageConfig(job, panel) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               title: job.cardName,
-              role_name: job.roleName,
               experience_band: job.experienceBand,
-              description: job.description
+              description: job.description,
+              job_type: job.employmentType || null,
+              location: job.location || null
             })
           });
         } catch (e) {
           console.error('Failed to save job details to backend:', e);
         }
-
 
         saveStateToLocalStorage();
         showPremiumToast('Job details saved.', 'success');
@@ -3516,32 +3857,123 @@ function renderCareerPageConfig(job, panel) {
     });
   }
 
-  if (isEditing) {
-    panel.querySelectorAll('.btn-jf-remove-field').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt(btn.dataset.idx);
-        const inputs = panel.querySelectorAll('.jf-field-edit');
-        inputs[idx]?.closest('.jf-field-item')?.remove();
-      });
-    });
-    document.getElementById('btn-cp-add-field')?.addEventListener('click', () => {
-      const list = panel.querySelector('.jf-fields-list');
-      const idx = list.querySelectorAll('.jf-field-item').length;
-      const item = document.createElement('div');
-      item.className = 'jf-field-item';
-      item.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-        <input type="text" class="jf-edit-input jf-field-edit" value="" data-idx="${idx}" style="flex:1;" placeholder="New field name..." />
-        <button class="btn-jf-remove-field" data-idx="${idx}" title="Remove">×</button>
-      `;
-      list.insertBefore(item, document.getElementById('btn-cp-add-field'));
-      item.querySelector('.btn-jf-remove-field').addEventListener('click', () => item.remove());
-      item.querySelector('input').focus();
-    });
-  }
+  // Application Form button - opens the form editor
+  document.getElementById('btn-cp-app-form')?.addEventListener('click', () => {
+    openApplicationFormEditor(job, panel);
+  });
+
+  // Preview button
+  document.getElementById('btn-cp-preview')?.addEventListener('click', () => {
+    showPremiumToast('Career page preview coming soon.', 'info');
+  });
 }
 
+function openApplicationFormEditor(job, panel) {
+  const fields = job.applicationFormFields || normalizeApplicationFields(job.applicationFields);
 
+  panel.innerHTML = `
+    <div class="cp-af-header">
+      <div class="cp-af-header-left">
+        <button class="btn-cp-af-back" id="btn-cp-af-back">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h2 class="cp-af-title">Application Form Fields</h2>
+        <svg class="cp-info-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span class="cp-af-subtitle">Select the fields you want candidates to fill out</span>
+      </div>
+      <button class="btn-cp-add-field-top" id="btn-cp-af-add">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Field
+      </button>
+    </div>
+
+    <div class="cp-af-fields-list" id="cp-af-fields-list">
+      ${fields.map((f, i) => `
+        <div class="cp-af-field-row" data-idx="${i}">
+          <label class="cp-af-checkbox-wrap">
+            <input type="checkbox" class="cp-af-checkbox" data-idx="${i}" ${f.enabled ? 'checked' : ''}>
+            <span class="cp-af-checkbox-box"></span>
+          </label>
+          <span class="cp-af-field-name-wrap">
+            <input type="text" class="cp-af-field-name-input" value="${f.name.replace(/"/g, '&quot;')}" data-idx="${i}" />
+          </span>
+          <div class="cp-af-required-wrap">
+            <label class="cp-af-toggle-wrap">
+              <input type="checkbox" class="cp-af-req-toggle" data-idx="${i}" ${f.required ? 'checked' : ''}>
+              <span class="cp-af-toggle-track"></span>
+            </label>
+            <span class="cp-af-req-label">Required</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="cp-af-footer">
+      <button class="btn-cp-save-form" id="btn-cp-af-save">
+        Save Form
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  `;
+
+  // Back button
+  document.getElementById('btn-cp-af-back')?.addEventListener('click', () => {
+    panel.dataset.cpEditing = 'false';
+    renderCareerPageConfig(job, panel);
+  });
+
+  // Add field button
+  document.getElementById('btn-cp-af-add')?.addEventListener('click', () => {
+    const list = document.getElementById('cp-af-fields-list');
+    const idx = list.querySelectorAll('.cp-af-field-row').length;
+    const row = document.createElement('div');
+    row.className = 'cp-af-field-row';
+    row.dataset.idx = idx;
+    row.innerHTML = `
+      <label class="cp-af-checkbox-wrap">
+        <input type="checkbox" class="cp-af-checkbox" data-idx="${idx}" checked>
+        <span class="cp-af-checkbox-box"></span>
+      </label>
+      <span class="cp-af-field-name-wrap">
+        <input type="text" class="cp-af-field-name-input" value="" data-idx="${idx}" placeholder="Field name..." />
+      </span>
+      <div class="cp-af-required-wrap">
+        <label class="cp-af-toggle-wrap">
+          <input type="checkbox" class="cp-af-req-toggle" data-idx="${idx}">
+          <span class="cp-af-toggle-track"></span>
+        </label>
+        <span class="cp-af-req-label">Required</span>
+      </div>
+    `;
+    list.appendChild(row);
+    row.querySelector('.cp-af-field-name-input')?.focus();
+  });
+
+  // Save form button
+  document.getElementById('btn-cp-af-save')?.addEventListener('click', () => {
+    const rows = document.querySelectorAll('.cp-af-field-row');
+    const newFields = [];
+    rows.forEach(row => {
+      const nameInput = row.querySelector('.cp-af-field-name-input');
+      const enabledCb = row.querySelector('.cp-af-checkbox');
+      const reqToggle = row.querySelector('.cp-af-req-toggle');
+      const name = nameInput?.value.trim();
+      if (!name) return;
+      newFields.push({
+        name,
+        enabled: !!enabledCb?.checked,
+        required: !!reqToggle?.checked
+      });
+    });
+    job.applicationFormFields = newFields;
+    // Keep legacy applicationFields in sync (enabled names only)
+    job.applicationFields = newFields.filter(f => f.enabled).map(f => f.name);
+    saveStateToLocalStorage();
+    showPremiumToast('Application form saved.', 'success');
+    panel.dataset.cpEditing = 'false';
+    renderCareerPageConfig(job, panel);
+  });
+}
 
 function renderResumeAnalysisConfig(job, panel) {
   const criteria = job.resumeCriteria || {};
@@ -6655,10 +7087,17 @@ function renderCsvPreview() {
 }
 
 async function importCsvCandidates() {
+  if (isImportingCsv) return;
   if (csvParsedCandidates.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
+
+  const btnCsvImport = document.getElementById('btn-csv-import');
+  if (btnCsvImport) {
+    btnCsvImport.disabled = true;
+    btnCsvImport.textContent = 'Importing...';
+  }
 
   const applicants = csvParsedCandidates.map(cand => ({
     name: cand.name,
@@ -6667,6 +7106,7 @@ async function importCsvCandidates() {
     source: currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload'
   }));
 
+  isImportingCsv = true;
   try {
     const result = await apiFetch(`/api/jobs/${activeJob.id}/applicants/bulk`, {
       method: 'POST',
@@ -6693,6 +7133,12 @@ async function importCsvCandidates() {
   } catch (e) {
     console.error("Failed to import CSV candidates:", e);
     showPremiumToast(`Error: ${e.message}`, "error");
+  } finally {
+    isImportingCsv = false;
+    if (btnCsvImport) {
+      btnCsvImport.disabled = false;
+      btnCsvImport.textContent = 'Import Candidates';
+    }
   }
 }
 
@@ -6786,16 +7232,24 @@ function checkAllResumesDone() {
 }
 
 async function importResumesCandidates() {
+  if (isImportingResumes) return;
   if (uploadedFiles.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (!activeJob) return;
+
+  const btnResumesImport = document.getElementById('btn-resumes-import');
+  if (btnResumesImport) {
+    btnResumesImport.disabled = true;
+    btnResumesImport.textContent = 'Importing...';
+  }
 
   const formData = new FormData();
   uploadedFiles.forEach(item => {
     formData.append('files', item.file);
   });
 
+  isImportingResumes = true;
   try {
     const sourceParam = currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload';
     const res = await fetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes?source=${sourceParam}`, {
@@ -6830,6 +7284,12 @@ async function importResumesCandidates() {
   } catch (e) {
     console.error("Failed to upload resumes:", e);
     showPremiumToast(`Error: ${e.message}`, "error");
+  } finally {
+    isImportingResumes = false;
+    if (btnResumesImport) {
+      btnResumesImport.disabled = false;
+      btnResumesImport.textContent = 'Import Candidates';
+    }
   }
 }
 
@@ -6916,7 +7376,12 @@ function renderManualQueue() {
   `).join('');
 }
 
+let isImportingManual = false;
+let isImportingCsv = false;
+let isImportingResumes = false;
+
 async function importManualQueue() {
+  if (isImportingManual) return;
   if (sourcingQueue.length === 0) return;
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
@@ -6928,6 +7393,7 @@ async function importManualQueue() {
     btnManualImport.textContent = 'Importing...';
   }
 
+  isImportingManual = true;
   try {
     // Submit each candidate to the backend
     const results = await Promise.all(
@@ -6959,6 +7425,7 @@ async function importManualQueue() {
     console.error('Failed to import manual queue:', e);
     showPremiumToast(`Error: ${e.message}`, 'error');
   } finally {
+    isImportingManual = false;
     if (btnManualImport) {
       btnManualImport.disabled = false;
       btnManualImport.textContent = 'Import Queue';
@@ -6985,7 +7452,9 @@ function addCandidateToAppState(name, email, phone, job) {
   const dateStr = `\${now.getDate().toString().padStart(2, '0')} \${months[now.getMonth()]} \${now.getFullYear()}, \${formatHour.toString().padStart(2, '0')}:\${now.getMinutes().toString().padStart(2, '0')} \${ampm}`;
 
   const status = currentSourcingMode === 'analyse' ? 'Resume' : 'Screening';
-  const score = `\${Math.floor(Math.random() * 20 + 80)}%`;
+  const score = status === 'Resume'
+    ? `${Math.floor(Math.random() * 20 + 80)}`
+    : `${Math.floor(Math.random() * 20 + 80)}%`;
 
   AppState.candidates.push({
     id: candId,
@@ -7242,9 +7711,9 @@ function renderResumeStagePaneForJob(candidates, job, container) {
             ${candidates.map(c => {
               const initials = c.name.split(' ').map(n => n[0]).join('');
               const cached = resumeAnalysisCache[c.id];
-              const score = cached ? cached.overallScore : 0;
+              const score = cached ? (cached.matchScore ?? cached.overallScore) : (c.matchScore !== null && c.matchScore !== undefined ? c.matchScore : 0);
               const matchClass = getMatchClass(score);
-              const isAnalysed = !!cached;
+              const isAnalysed = !!cached || c.resumeAnalysed;
               return `
                 <tr data-candidate-id="${c.id}" data-cid="${c.id}">
                   <td><input type="checkbox" class="table-checkbox-row" /></td>
@@ -7254,7 +7723,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                       <span class="cand-email-sub">${c.email}</span>
                     </div>
                   </td>
-                  <td><span class="ra-match-pill ${matchClass}">${isAnalysed ? score + '%' : 'Pending'}</span></td>
+                  <td><span class="ra-match-pill ${matchClass}">${isAnalysed ? score : 'Pending'}</span></td>
                   <td><span class="ra-status-badge ${isAnalysed ? 'analysed' : 'pending'}">${isAnalysed ? 'Analysed' : 'Awaiting'}</span></td>
                   <td>
                     <input type="file" id="ra-file-${c.id}" accept=".pdf,.doc,.docx,.txt" hidden>
@@ -7264,18 +7733,12 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                     }
                   </td>
                   <td>
-                    ${(c.status === 'Resume' && c.source !== 'Scheduled' && c.source !== 'scheduled') ? `
-                      <div style="display:flex;gap:6px;justify-content:center;">
-                        <button class="btn-stage-reject" data-candidate-id="${c.id}" style="padding:4px 8px;font-size:0.72rem;">Reject</button>
+                    <div style="display:flex;gap:6px;justify-content:center;">
+                      <button class="btn-stage-reject" data-candidate-id="${c.id}" style="padding:4px 8px;font-size:0.72rem;">Reject</button>
+                      ${(c.status === 'Resume' && c.source !== 'Scheduled' && c.source !== 'scheduled') ? `
                         <button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening" style="padding:4px 8px;font-size:0.72rem;">Advance</button>
-                      </div>
-                    ` : `
-                      <div style="text-align:center;">
-                        <span class="ra-status-badge analysed" style="background:rgba(212,175,55,0.12);color:var(--color-gold);border:1px solid rgba(212,175,55,0.25);padding:3px 8px;font-size:0.72rem;border-radius:4px;display:inline-block;font-weight:500;">
-                          ${(c.source === 'Scheduled' || c.source === 'scheduled') ? 'Screening' : 'Advanced'}
-                        </span>
-                      </div>
-                    `}
+                      ` : ''}
+                    </div>
                   </td>
                 </tr>
               `;
@@ -7308,7 +7771,29 @@ function bindResumeAnalysisEvents(job) {
     const viewBtn = row.querySelector('.btn-ra-view-resume');
 
     fileInput?.addEventListener('change', () => {
-      if (fileInput.files[0]) handleResumeFile(cid, fileInput.files[0]);
+      const file = fileInput.files[0];
+      if (file) {
+        const isPDF = file.name.toLowerCase().endsWith('.pdf');
+        if (isPDF) {
+          resumeTextCache[cid] = null;
+          showPremiumToast(`${file.name} loaded — PDF will use auto-generated profile.`, 'info');
+          runResumeAnalysis(cid, job);
+        } else {
+          const reader = new FileReader();
+          reader.onload = e => {
+            const text = e.target.result;
+            if (isGarbageText(text)) {
+              resumeTextCache[cid] = null;
+              showPremiumToast(`${file.name} loaded — binary file will use auto-generated profile.`, 'info');
+            } else {
+              resumeTextCache[cid] = text;
+              showPremiumToast(`${file.name} loaded successfully.`, 'success');
+            }
+            runResumeAnalysis(cid, job);
+          };
+          reader.readAsText(file);
+        }
+      }
     });
 
     analyseBtn?.addEventListener('click', async () => {
@@ -7326,24 +7811,15 @@ function bindResumeAnalysisEvents(job) {
         }
         runResumeAnalysis(cid, job);
       } else {
-        fileInput?.click();
-        const handler = () => {
-          if (fileInput.files[0]) {
-            handleResumeFile(cid, fileInput.files[0]);
-            setTimeout(() => runResumeAnalysis(cid, job), 200);
-          } else {
-            runResumeAnalysis(cid, job);
-          }
-          fileInput.removeEventListener('change', handler);
-        };
-        fileInput?.addEventListener('change', handler);
+        if (fileInput) {
+          fileInput.value = "";
+          fileInput.click();
+        }
       }
     });
 
     viewBtn?.addEventListener('click', () => {
-      if (resumeAnalysisCache[cid]) {
-        openReportDrawerForCandidate(cid);
-      }
+      openReportDrawerForCandidate(cid, 'resume');
     });
 
     const rejectBtn = row.querySelector('.btn-stage-reject');
@@ -7462,11 +7938,21 @@ async function runResumeAnalysis(cid, job) {
     btn.innerHTML = `<span class="ra-spinner"></span> Analysing…`;
   }
 
-  const systemPrompt = `You are Lina, an expert ATS resume analyst for IntervieHire. Analyse the provided resume against the job requirements. Respond ONLY with a valid JSON object matching exactly this schema — no extra text, no markdown fences:
-{"matchScore":number,"summary":"2-3 sentence professional assessment","experienceYears":"e.g. 4 years","skills":{"detected":["skill1"],"matched":["skill1"],"missing":["skill1"]},"scorecard":{"technical":number,"experience":number,"communication":number,"cultureFit":number},"recommendation":"Advance|Hold|Reject","recommendationReason":"1 sentence reason"}
-All scorecard values 0–10. matchScore 0–100.`;
+  const systemPrompt = `You are Lina, an expert ATS resume analyst for IntervieHire. Analyse the provided resume against the job requirements and custom parameters. Respond ONLY with a valid JSON object matching exactly this schema — no extra text, no markdown fences:
+{
+  "mustHaveMatches": [{"criteria": "string", "met": boolean, "reason": "string"}],
+  "goodToHaveMatches": [{"criteria": "string", "met": boolean, "reason": "string"}],
+  "redFlagsDetected": [{"flag": "string", "detected": boolean, "reason": "string"}],
+  "summary": "2-3 sentence professional assessment",
+  "experienceYears": "e.g. 4 years",
+  "skills": {"detected": ["skill1"], "matched": ["skill1"], "missing": ["skill1"]},
+  "scorecard": {"technical": number, "experience": number, "communication": number, "cultureFit": number},
+  "recommendation": "Advance|Hold|Reject",
+  "recommendationReason": "1 sentence reason"
+}
+All scorecard values 0–10. Evaluate every item in the provided Must-Have, Good-to-Have, and Red Flag lists exactly as given.`;
 
-  const userMsg = `Job Title: ${job.cardName}\nRole: ${job.roleName}\nExperience Required: ${job.experienceBand}\nJob Description: ${job.description || '(Not provided)'}\n\n--- RESUME ---\n${resumeText.slice(0, 3500)}`;
+  const userMsg = `Job Title: ${job.cardName}\nRole: ${job.roleName}\nExperience Required: ${job.experienceBand}\nJob Description: ${job.description || '(Not provided)'}\n\nATS Evaluation Parameters:\nMust-Have Criteria: ${JSON.stringify(job.resumeCriteria?.mustHave || [])}\nGood-to-Have Criteria: ${JSON.stringify(job.resumeCriteria?.goodToHave || [])}\nRed Flags (Should Not Have): ${JSON.stringify(job.resumeCriteria?.redFlags || [])}\n\n--- RESUME ---\n${resumeText.slice(0, 3500)}`;
 
   try {
     const raw = await callDeepSeekAPI(
@@ -7474,12 +7960,67 @@ All scorecard values 0–10. matchScore 0–100.`;
       true
     );
     const result = JSON.parse(sanitizeJSONResponse(raw));
+
+    // Programmatic Weighted Match Score Calculation
+    let mustHaveScore = 100;
+    if (result.mustHaveMatches && result.mustHaveMatches.length > 0) {
+      const metCount = result.mustHaveMatches.filter(m => m.met).length;
+      mustHaveScore = (metCount / result.mustHaveMatches.length) * 100;
+    } else {
+      const jobMustHave = job.resumeCriteria?.mustHave || [];
+      if (jobMustHave.length > 0) mustHaveScore = 0;
+    }
+
+    let goodToHaveScore = 100;
+    if (result.goodToHaveMatches && result.goodToHaveMatches.length > 0) {
+      const metCount = result.goodToHaveMatches.filter(g => g.met).length;
+      goodToHaveScore = (metCount / result.goodToHaveMatches.length) * 100;
+    } else {
+      const jobGoodToHave = job.resumeCriteria?.goodToHave || [];
+      if (jobGoodToHave.length > 0) goodToHaveScore = 0;
+    }
+
+    const expScore = (result.scorecard?.experience || 0) * 10;
+    const techCommScore = (((result.scorecard?.technical || 0) + (result.scorecard?.communication || 0)) / 2) * 10;
+
+    let calculatedScore = (mustHaveScore * 0.40) + (goodToHaveScore * 0.30) + (expScore * 0.15) + (techCommScore * 0.15);
+
+    let redFlagsCount = 0;
+    if (result.redFlagsDetected && result.redFlagsDetected.length > 0) {
+      redFlagsCount = result.redFlagsDetected.filter(r => r.detected).length;
+    }
+    calculatedScore -= (redFlagsCount * 20);
+
+    const matchScore = Math.max(0, Math.min(100, Math.round(calculatedScore)));
+    result.matchScore = matchScore;
+
     resumeAnalysisCache[cid] = result;
     const cand = AppState.candidates.find(c => c.id === cid);
-    if (cand) { cand.score = `${result.matchScore}%`; saveStateToLocalStorage(); }
+    if (cand) { 
+      cand.score = `${result.matchScore}`; 
+      cand.resumeAnalysed = true;
+      cand.matchScore = matchScore;
+      saveStateToLocalStorage(); 
+    }
+
+    try {
+      await apiFetch(`/api/jobs/applicants/${cid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resume_analysed: true,
+          match_score: matchScore,
+          resume_analysis_report: JSON.stringify(result)
+        })
+      });
+    } catch (dbErr) {
+      console.error("Failed to update match score in database:", dbErr);
+    }
+
     renderAnalysisResult(cid, result);
     showPremiumToast('Resume analysis complete.', 'success');
-  } catch {
+  } catch (err) {
+    console.error("Resume analysis failed:", err);
     showPremiumToast('Analysis failed — please try again.', 'error');
     if (btn) {
       btn.disabled = false;
@@ -7496,7 +8037,7 @@ function renderAnalysisResult(cid, result) {
     const resumeTd = row.querySelectorAll('td')[4];
     if (scoreTd) {
       const matchClass = result.matchScore >= 75 ? 'high' : result.matchScore >= 50 ? 'medium' : 'low';
-      scoreTd.innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}%</span>`;
+      scoreTd.innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}</span>`;
     }
     if (statusTd) {
       statusTd.innerHTML = `<span class="ra-status-badge analysed">Analysed</span>`;
@@ -7504,7 +8045,7 @@ function renderAnalysisResult(cid, result) {
     if (resumeTd) {
       resumeTd.innerHTML = `<button class="btn-ra-view-resume" data-cid="${cid}">View Results</button>`;
       resumeTd.querySelector('.btn-ra-view-resume')?.addEventListener('click', () => {
-        openReportDrawerForCandidate(cid);
+        openReportDrawerForCandidate(cid, 'resume');
       });
     }
     return;
@@ -7515,7 +8056,7 @@ function renderAnalysisResult(cid, result) {
   if (!resultEl) return;
 
   if (badgeEl) {
-    badgeEl.textContent = `${result.matchScore}%`;
+    badgeEl.textContent = `${result.matchScore}`;
     const c = result.matchScore >= 75 ? '34,197,94' : result.matchScore >= 50 ? '251,191,36' : '239,68,68';
     badgeEl.style.cssText = `background:rgba(${c},0.12);color:rgb(${c});border-color:rgba(${c},0.3);`;
   }
@@ -9039,6 +9580,8 @@ async function loadStateFromBackend() {
           score = `${c.functional_score}%`;
         } else if (c.screening_score !== null) {
           score = `${c.screening_score}%`;
+        } else if (c.match_score !== null && c.match_score !== undefined) {
+          score = `${c.match_score}`;
         }
 
         const job = AppState.jobs.find(j => j.id === c.job_id);
@@ -9049,6 +9592,14 @@ async function loadStateFromBackend() {
           interviewStatus = statusMap[c.functional_status] || 'Pending';
         } else if (status === 'Screening' && c.screening_status) {
           interviewStatus = statusMap[c.screening_status] || 'Pending';
+        }
+
+        if (c.resume_analysis_report) {
+          try {
+            resumeAnalysisCache[String(c.id)] = JSON.parse(c.resume_analysis_report);
+          } catch (e) {
+            console.error("Failed to parse resume analysis report for candidate:", c.id, e);
+          }
         }
 
         return {
@@ -9070,6 +9621,7 @@ async function loadStateFromBackend() {
           recruiterScreeningScore: c.recruiter_screening_score,
           resumeUrl: c.resume_url || null,
           resumeAnalysed: c.resume_analysed || false,
+          matchScore: c.match_score !== undefined ? c.match_score : null,
           reportUrl: c.report_url || null
         };
       });

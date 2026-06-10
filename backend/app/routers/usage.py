@@ -195,6 +195,8 @@ def get_candidates_table(
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "resume_url": a.resume_url,
             "resume_analysed": a.resume_analysed,
+            "match_score": a.match_score,
+            "resume_analysis_report": a.resume_analysis_report,
         }
         for a in applicants
     ]

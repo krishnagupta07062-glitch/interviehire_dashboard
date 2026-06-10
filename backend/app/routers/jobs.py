@@ -164,6 +164,48 @@ def clean_and_parse_json(text: str) -> dict:
     return json.loads(text)
 
 
+def _build_structured_description(ai_data: dict, fallback_text: str) -> str:
+    """
+    Builds a clean, structured job description string from AI-extracted sections.
+    Format:
+        Job overview
+        <overview text>
+
+        Key responsibilities
+        - item 1
+        - item 2
+
+        Requirements
+        - item 1
+        - item 2
+    Falls back to legacy summary+description or raw file text if structured fields absent.
+    """
+    job_overview = (ai_data.get("job_overview") or ai_data.get("summary") or "").strip()
+    responsibilities = ai_data.get("key_responsibilities") or []
+    requirements = ai_data.get("requirements") or []
+
+    # If no structured fields at all, fall back gracefully
+    if not job_overview and not responsibilities and not requirements:
+        legacy_desc = ai_data.get("description") or ""
+        if job_overview or legacy_desc:
+            return f"{job_overview}\n\n{legacy_desc}".strip() if legacy_desc else job_overview
+        return fallback_text
+
+    parts = []
+    if job_overview:
+        parts.append(f"Job overview\n{job_overview}")
+
+    if responsibilities:
+        bullet_list = "\n".join(f"- {r}" for r in responsibilities if r)
+        parts.append(f"Key responsibilities\n{bullet_list}")
+
+    if requirements:
+        bullet_list = "\n".join(f"- {r}" for r in requirements if r)
+        parts.append(f"Requirements\n{bullet_list}")
+
+    return "\n\n".join(parts) if parts else fallback_text
+
+
 # ─── CREATE JOB (file upload path) ───────────────────────────────────────────
 
 @router.post("/upload-jd")
@@ -222,8 +264,9 @@ You MUST extract and output a JSON object matching this EXACT format (no other t
   "role_name": "The official role title (e.g. Senior Frontend Engineer). For placement/university documents, extract the specific project/role title (e.g., 'Automation of Model Monitoring Developer' or 'Phy Systems Engineer').",
   "card_name": "A short, visual card title for the board (e.g. Next.js Core Lead Developer)",
   "experience_band": "Choose one of these: 'Upto 2 Years', '1-4 Years', '3-6 Years', '5+ Years'",
-  "summary": "A concise 2-3 sentence overview summary of the role and goals.",
-  "description": "A clean, structured, and 'to the point' description of the job (e.g. responsibilities, requirements) formatted cleanly in markdown or bullet points, based on the provided JD text.",
+  "job_overview": "A concise 2-3 sentence overview of the role and goals. Plain text only, no bullet points.",
+  "key_responsibilities": ["Responsibility 1", "Responsibility 2", "Responsibility 3", "Responsibility 4", "Responsibility 5"],
+  "requirements": ["Requirement 1", "Requirement 2", "Requirement 3", "Requirement 4", "Requirement 5"],
   "skills": "Comma-separated key technical skills (e.g. React, Next.js, TypeScript, Python, Tableau)",
   "screening_questions": [
     "Recruiter screening question 1",
@@ -353,7 +396,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
+                    "description": _build_structured_description(ai_data, file_text),
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -442,7 +485,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
+                    "description": _build_structured_description(ai_data, file_text),
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -530,7 +573,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
+                    "description": _build_structured_description(ai_data, file_text),
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -616,7 +659,7 @@ USER EXTRA INSTRUCTIONS / PROMPT:
                     "role_name": ai_data.get("role_name", "Senior Software Engineer"),
                     "card_name": ai_data.get("card_name", "Full Stack Core Architect"),
                     "experience_band": ai_data.get("experience_band", "3-6 Years"),
-                    "description": f"{ai_data.get('summary', '')}\n\n{ai_data.get('description', '')}".strip() if (ai_data.get('summary') or ai_data.get('description')) else file_text,
+                    "description": _build_structured_description(ai_data, file_text),
                     "skills": ai_data.get("skills", "Python, React"),
                     "screening_questions": ai_data.get("screening_questions", []),
                     "functional_questions": ai_data.get("functional_questions", []),
@@ -1544,7 +1587,6 @@ def upload_resumes(
         if existing_applicant:
             # Map resume to the existing candidate record
             existing_applicant.resume_url = file_path
-            existing_applicant.resume_analysed = True
             
             # Preserve the source: do not overwrite existing source if already set
             if not existing_applicant.source and source:
@@ -1575,7 +1617,7 @@ def upload_resumes(
                 source=source or ApplicantSource.bulk_upload,
                 resume_url=file_path,
                 job_id=job_id,
-                resume_analysed=True
+                resume_analysed=False
             )
             if applicant.source == ApplicantSource.scheduled:
                 applicant.screening_status = InterviewStatus.pending

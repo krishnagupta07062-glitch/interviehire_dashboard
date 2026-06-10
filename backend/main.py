@@ -20,6 +20,8 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS recruiter_screening VARCHAR;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS recruiter_screening_score FLOAT;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMP;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS match_score FLOAT;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS resume_analysis_report TEXT;"))
     conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS organisation_id UUID;"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS organisation_id UUID;"))
     conn.commit()

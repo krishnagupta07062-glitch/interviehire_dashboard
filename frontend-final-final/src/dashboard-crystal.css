@@ -9444,3 +9444,476 @@ body.light-theme .jf-candidates-banner {
   border-color: rgba(var(--color-gold-rgb), 0.25);
 }
 
+/* ============================================================
+   CAREER PAGE REDESIGN — New Layout
+   ============================================================ */
+
+/* Page Header Row */
+.cp-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.cp-page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cp-page-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cp-info-icon {
+  color: var(--color-text-faint);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Preview button */
+.btn-cp-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-gold);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: opacity 0.2s ease;
+}
+.btn-cp-preview:hover { opacity: 0.75; }
+
+/* Application Form button */
+.btn-cp-app-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 9px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+}
+.btn-cp-app-form:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* Section header row — title left, edit button right */
+.cp-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.cp-section-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+/* Edit button beside section heading */
+.btn-cp-jd-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+}
+.btn-cp-jd-edit:hover {
+  color: var(--color-gold);
+  border-color: rgba(var(--color-gold-rgb), 0.3);
+  background: rgba(var(--color-gold-rgb), 0.04);
+}
+
+/* JD Meta Row (company + location) */
+.cp-jd-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 10px;
+}
+.cp-jd-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cp-jd-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.cp-jd-meta-dot {
+  font-size: 0.8rem;
+  color: var(--color-text-faint);
+}
+
+/* Badges row below meta */
+.cp-jd-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.cp-jd-badge-pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--color-text-muted);
+}
+
+/* Structured JD content sections */
+.jf-jd-section-heading {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  margin: 18px 0 8px;
+  font-family: var(--font-display);
+}
+.jf-jd-bullet-list {
+  margin: 0 0 12px 0;
+  padding-left: 18px;
+  list-style: none;
+}
+.jf-jd-bullet-list li {
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+  line-height: 1.65;
+  padding: 3px 0;
+  position: relative;
+}
+.jf-jd-bullet-list li::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 11px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  opacity: 0.7;
+}
+
+/* Application Form Fields section (read-only display at bottom) */
+.cp-app-fields-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.cp-app-fields-icon-wrap {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(var(--color-gold-rgb), 0.08);
+  border: 1px solid rgba(var(--color-gold-rgb), 0.15);
+  flex-shrink: 0;
+}
+.cp-app-fields-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  margin: 0 0 3px;
+  font-family: var(--font-display);
+}
+.cp-app-fields-subtitle {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+.cp-enabled-fields-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-faint);
+  margin-bottom: 8px;
+}
+.cp-enabled-fields-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.cp-enabled-field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-bottom: none;
+}
+.cp-enabled-field-row:first-child { border-radius: 10px 10px 0 0; }
+.cp-enabled-field-row:last-child { border-radius: 0 0 10px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.cp-enabled-field-row:only-child { border-radius: 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.cp-enabled-field-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(var(--color-gold-rgb), 0.08);
+  border: 1px solid rgba(var(--color-gold-rgb), 0.2);
+}
+.cp-enabled-field-name {
+  flex: 1;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.cp-field-required-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #f87171;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.2);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   APPLICATION FORM EDITOR (full-panel view — Screenshot 1)
+   ============================================================ */
+.cp-af-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.cp-af-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.btn-cp-af-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.btn-cp-af-back:hover { background: rgba(255,255,255,0.08); color: var(--color-text-primary); }
+.cp-af-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  margin: 0;
+  font-family: var(--font-display);
+}
+.cp-af-subtitle {
+  font-size: 0.78rem;
+  color: var(--color-text-faint);
+}
+.btn-cp-add-field-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  cursor: pointer;
+  font-family: var(--font-body);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.btn-cp-add-field-top:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
+
+/* Field rows in editor */
+.cp-af-fields-list { display: flex; flex-direction: column; gap: 0; margin-bottom: 24px; }
+.cp-af-field-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-bottom: none;
+  transition: background 0.15s ease;
+}
+.cp-af-field-row:first-child { border-radius: 12px 12px 0 0; }
+.cp-af-field-row:last-child { border-radius: 0 0 12px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.cp-af-field-row:only-child { border-radius: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.cp-af-field-row:hover { background: rgba(255,255,255,0.035); }
+
+/* Custom checkbox */
+.cp-af-checkbox-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cp-af-checkbox-wrap input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.cp-af-checkbox-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 2px solid rgba(255,255,255,0.15);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.cp-af-checkbox-wrap input:checked + .cp-af-checkbox-box {
+  background: rgba(99,102,241,0.6);
+  border-color: rgba(99,102,241,0.85);
+}
+.cp-af-checkbox-wrap input:checked + .cp-af-checkbox-box::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg) translateY(-1px);
+}
+
+/* Field name text input (inline, no border) */
+.cp-af-field-name-wrap { flex: 1; }
+.cp-af-field-name-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  padding: 0;
+}
+.cp-af-field-name-input::placeholder { color: var(--color-text-faint); }
+
+/* Required toggle */
+.cp-af-required-wrap { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cp-af-req-label { font-size: 0.78rem; color: var(--color-text-muted); }
+.cp-af-toggle-wrap {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+.cp-af-toggle-wrap input[type="checkbox"] { opacity: 0; width: 0; height: 0; position: absolute; }
+.cp-af-toggle-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.08);
+  border-radius: 20px;
+  transition: background 0.25s ease;
+}
+.cp-af-toggle-track::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: rgba(255,255,255,0.35);
+  border-radius: 50%;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s ease;
+}
+.cp-af-toggle-wrap input:checked + .cp-af-toggle-track { background: rgba(99,102,241,0.65); }
+.cp-af-toggle-wrap input:checked + .cp-af-toggle-track::before { transform: translateX(16px); background: #818cf8; }
+
+/* Save Form footer */
+.cp-af-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.btn-cp-save-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 9px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(99,102,241,0.85), rgba(139,92,246,0.85));
+  border: 1px solid rgba(99,102,241,0.4);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(99,102,241,0.25);
+}
+.btn-cp-save-form:hover {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  box-shadow: 0 6px 20px rgba(99,102,241,0.4);
+  transform: translateY(-1px);
+}
+
+/* Light-theme overrides */
+body.light-theme .cp-page-header { border-color: rgba(0,0,0,0.08); }
+body.light-theme .btn-cp-app-form { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.12); }
+body.light-theme .btn-cp-app-form:hover { background: rgba(0,0,0,0.07); }
+body.light-theme .btn-cp-jd-edit { border-color: rgba(0,0,0,0.1); }
+body.light-theme .btn-cp-jd-edit:hover { background: rgba(var(--color-gold-rgb),0.05); border-color: rgba(var(--color-gold-rgb),0.25); }
+body.light-theme .cp-enabled-field-row { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.07); }
+body.light-theme .cp-af-field-row { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.07); }
+body.light-theme .cp-af-field-row:hover { background: rgba(0,0,0,0.04); }
+body.light-theme .cp-af-header { border-color: rgba(0,0,0,0.08); }
+body.light-theme .cp-af-footer { border-color: rgba(0,0,0,0.06); }
+body.light-theme .cp-af-checkbox-box { border-color: rgba(0,0,0,0.2); }
+body.light-theme .cp-af-toggle-track { background: rgba(0,0,0,0.1); }
+body.light-theme .cp-af-toggle-track::before { background: rgba(0,0,0,0.25); }
+body.light-theme .btn-cp-af-back { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
+body.light-theme .btn-cp-add-field-top { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
+body.light-theme .cp-jd-badge-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
+body.light-theme .cp-af-field-name-input { color: var(--color-text-primary); }
+body.light-theme .jf-jd-bullet-list li { color: rgba(0,0,0,0.6); }
+body.light-theme .cp-field-required-badge { color: #dc2626; background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.2); }
+

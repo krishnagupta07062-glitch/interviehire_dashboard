@@ -13,7 +13,7 @@ export default function DashboardCrystalClient() {
     return () => {
       if (cleanup) cleanup();
     };
-  }, [router]);
+  }, []);
 
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 }
