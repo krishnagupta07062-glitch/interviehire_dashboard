@@ -131,7 +131,7 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             candidate.phone = applicant.phone
             db.commit()
 
-        # 4. Sync InterviewSession
+        # 4. Sync InterviewSession — always reset to SCHEDULED so re-advances generate a fresh interview
         session_id = str(applicant.id) # Use candidate ID as Session ID directly
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         if not session:
@@ -145,6 +145,18 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
                 transcript=[]
             )
             db.add(session)
+            db.commit()
+            db.refresh(session)
+        else:
+            # Reset the existing session so the candidate can re-attempt
+            session.status = SessionStatus.SCHEDULED
+            session.transcript = []
+            session.evaluation = None
+            session.reportUrl = None
+            session.startedAt = None
+            session.completedAt = None
+            session.websocketId = None
+            session.ueSocketId = None
             db.commit()
             db.refresh(session)
         # 5. Sync Questions from functional_parameters

@@ -1665,14 +1665,13 @@ def update_applicant(
     db.commit()
     db.refresh(applicant)
 
-    # 1. Generate token and dispatch invitation on stage advancement
+    # 1. Always regenerate a fresh token on every advance so a new interview link is generated
     if (has_screening_update and applicant.screening_status) or (has_functional_update and applicant.functional_status):
         import uuid
         from datetime import datetime, timedelta
-        if not applicant.scheduling_token:
-            applicant.scheduling_token = str(uuid.uuid4())
-            db.commit()
-            db.refresh(applicant)
+        applicant.scheduling_token = str(uuid.uuid4())  # always fresh — allows re-testing
+        db.commit()
+        db.refresh(applicant)
 
         job = db.query(Job).filter(Job.id == applicant.job_id).first()
         job_title = job.role_name or job.title if job else "General Position"
@@ -1798,7 +1797,8 @@ def update_applicant(
         except Exception as mail_err:
             logger.error(f"Failed to send confirmation email: {mail_err}")
 
-    if has_functional_update and applicant.functional_status:
+    # Sync to AI for both screening and functional advances so interview session is always fresh
+    if (has_screening_update and applicant.screening_status) or (has_functional_update and applicant.functional_status):
         from app.utils.ai_sync import sync_applicant_to_ai
         sync_applicant_to_ai(db, applicant)
 
