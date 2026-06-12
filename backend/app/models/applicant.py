@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Enum, Float, ForeignKey, Text, Boolean
+from sqlalchemy import Column, String, DateTime, Enum, Float, ForeignKey, Text, Boolean, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -65,6 +65,11 @@ class Applicant(Base):
     attempted_at = Column(DateTime(timezone=True), nullable=True)
     match_score = Column(Float, nullable=True)
     resume_analysis_report = Column(Text, nullable=True)
+    scheduling_token = Column(String, nullable=True, index=True)
+    calendar_event_id = Column(String, nullable=True)
+    overall_interview_score = Column(Float, nullable=True)
+    proctoring_severity_flag = Column(String, nullable=True)
+    calendar_sequence = Column(Integer, default=0, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

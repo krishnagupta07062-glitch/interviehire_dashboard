@@ -45,6 +45,13 @@ def proxy_deepseek(data: DeepSeekRequest):
             with urllib.request.urlopen(req, timeout=40) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as err:
+            import traceback
+            try:
+                with open("c:\\Users\\KRISHNA GUPTA\\Desktop\\interviehire\\deepseek_error.log", "a", encoding="utf-8") as f:
+                    f.write(f"--- DeepSeek proxy failure: {err} ---\n")
+                    traceback.print_exc(file=f)
+            except:
+                pass
             print(f"DeepSeek proxy failure: {err}. Falling back to next LLM...")
 
     # 2. Attempt Groq
@@ -155,6 +162,11 @@ def proxy_deepseek(data: DeepSeekRequest):
             print(f"Gemini proxy failure: {err}")
 
     # If all fail or no keys exist
+    try:
+        with open("c:\\Users\\KRISHNA GUPTA\\Desktop\\interviehire\\deepseek_error.log", "a", encoding="utf-8") as f:
+            f.write(f"All attempts failed. Keys present: DeepSeek={bool(deepseek_key)}, Groq={bool(groq_key)}, Grok={bool(grok_key)}, Gemini={bool(gemini_key)}\n")
+    except:
+        pass
     raise HTTPException(
         status_code=500,
         detail="No LLM API key configured (DeepSeek, Groq, Grok, Gemini), or all attempts failed."

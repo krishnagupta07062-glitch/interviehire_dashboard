@@ -1,5 +1,16 @@
 'use client';
 
+if (typeof window !== 'undefined') {
+  const originalError = console.error;
+  console.error = (...args: any[]) => {
+    const msg = args.join(' ');
+    if (msg.includes('INFO:') || msg.includes('WARNING:') || msg.includes('XNNPACK') || msg.includes('delegate')) {
+      return;
+    }
+    originalError(...args);
+  };
+}
+
 import { useCallback, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver, type FaceLandmarkerResult } from '@mediapipe/tasks-vision';
 
@@ -83,8 +94,14 @@ function sampleIrisOffset(
     return null;
   }
   let result: FaceLandmarkerResult | null = null;
+  let timestamp = performance.now();
+  const lastTs = (faceTask as any)._lastTimestamp || 0;
+  if (timestamp <= lastTs) {
+    timestamp = lastTs + 0.001;
+  }
+  (faceTask as any)._lastTimestamp = timestamp;
   try {
-    result = (faceTask as any).detectForVideo(video, performance.now());
+    result = (faceTask as any).detectForVideo(video, timestamp);
   } catch (err) {
     console.warn("sampleIrisOffset error", err);
     return null;

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.websocket_routes import router as websocket_router
 from app.database import Base, engine
-from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek, auth
+from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek, auth, public, leaderboard
  
 # Import all models so SQLAlchemy registers them before create_all
 import app.models  # noqa
@@ -22,8 +22,16 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMP;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS match_score FLOAT;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS resume_analysis_report TEXT;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS scheduling_token VARCHAR;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_event_id VARCHAR;"))
     conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS organisation_id UUID;"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS organisation_id UUID;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token VARCHAR;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_client_id VARCHAR;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_client_secret VARCHAR;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS overall_interview_score FLOAT;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS proctoring_severity_flag VARCHAR;"))
+    conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_sequence INTEGER DEFAULT 0;"))
     conn.commit()
 
     # Add 'super_admin' to usertype enum in postgresql
@@ -87,6 +95,8 @@ app.include_router(organisation.router,     prefix="/api/organisation", tags=["O
 app.include_router(usage.router,            prefix="/api/usage",    tags=["Usage"])
 app.include_router(settings_router.router,  prefix="/api/settings", tags=["Settings"])
 app.include_router(deepseek.router,         prefix="/api/deepseek", tags=["DeepSeek"])
+app.include_router(public.router,           prefix="/api/public",   tags=["Public"])
+app.include_router(leaderboard.router,      prefix="/api/leaderboard", tags=["Leaderboard"])
  
  
 @app.get("/")

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { initLandingPage } from '../../src/main';
 
 const landingHtml = `
@@ -483,12 +483,23 @@ const landingHtml = `
 `;
 
 export default function LandingPage() {
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     const cleanup = initLandingPage();
     return () => {
       if (cleanup) cleanup();
     };
-  }, []);
+  }, [mounted]);
+
+  if (!mounted) {
+    return <div style={{ minHeight: '100vh', background: '#0b0f19' }} />;
+  }
 
   return <div dangerouslySetInnerHTML={{ __html: landingHtml }} />;
 }

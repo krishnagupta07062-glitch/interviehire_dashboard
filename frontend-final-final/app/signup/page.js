@@ -34,7 +34,8 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/signup', {
+      const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? `http://${window.location.hostname}:8000` : '';
+      const res = await fetch(`${baseUrl}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

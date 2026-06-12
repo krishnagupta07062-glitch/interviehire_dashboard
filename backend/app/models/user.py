@@ -31,6 +31,9 @@ class User(Base):
     status = Column(Enum(UserStatus), default=UserStatus.invited)
     hashed_password = Column(String, nullable=True)  # null until they accept invite
     organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id"), nullable=True)
+    google_refresh_token = Column(String, nullable=True)
+    google_client_id = Column(String, nullable=True)
+    google_client_secret = Column(String, nullable=True)
     registered_on = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form, Body, Header
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
 import shutil, os
 from sqlalchemy import func
+import logging
+
+logger = logging.getLogger(__name__)
+from app.config import settings
 
 from app.database import get_db
 from app.models.job import Job, JobStatus, JobCollaborator
@@ -1653,11 +1657,146 @@ def update_applicant(
     db: Session = Depends(get_db)
 ):
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    has_screening_update = 'screening_status' in data.model_dump(exclude_unset=True)
     has_functional_update = 'functional_status' in data.model_dump(exclude_unset=True)
+
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(applicant, key, value)
     db.commit()
     db.refresh(applicant)
+
+    # 1. Generate token and dispatch invitation on stage advancement
+    if (has_screening_update and applicant.screening_status) or (has_functional_update and applicant.functional_status):
+        import uuid
+        from datetime import datetime, timedelta
+        if not applicant.scheduling_token:
+            applicant.scheduling_token = str(uuid.uuid4())
+            db.commit()
+            db.refresh(applicant)
+
+        job = db.query(Job).filter(Job.id == applicant.job_id).first()
+        job_title = job.role_name or job.title if job else "General Position"
+        stage_name = "Recruiter Screening" if (has_screening_update and applicant.screening_status) else "Functional Interview"
+
+        proposed_time = None
+        if stage_name == "Recruiter Screening":
+            if not applicant.screening_scheduled_at:
+                # Default timer to 1 PM next day
+                now = datetime.utcnow()
+                applicant.screening_scheduled_at = (now + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
+                db.commit()
+            proposed_time = applicant.screening_scheduled_at
+        else:
+            if not applicant.functional_scheduled_at:
+                # Default timer to 1 PM next day
+                now = datetime.utcnow()
+                applicant.functional_scheduled_at = (now + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
+                db.commit()
+            proposed_time = applicant.functional_scheduled_at
+
+        confirm_link = f"http://localhost:8000/api/public/confirm/{applicant.scheduling_token}"
+        reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
+        try:
+            from app.utils.email_sender import send_stage_invitation_email
+            send_stage_invitation_email(
+                candidate_name=applicant.name,
+                candidate_email=applicant.email,
+                job_title=job_title,
+                stage_name=stage_name,
+                proposed_time=proposed_time,
+                confirm_link=confirm_link,
+                reschedule_link=reschedule_link
+            )
+        except Exception as mail_err:
+            logger.error(f"Failed to send stage invitation email: {mail_err}")
+
+    # 2. Google Calendar Event and confirmation email when scheduled
+    is_scheduled = False
+    target_time = None
+    stage_name = ""
+    
+    screening_val = getattr(applicant.screening_status, "value", applicant.screening_status) if applicant.screening_status else None
+    functional_val = getattr(applicant.functional_status, "value", applicant.functional_status) if applicant.functional_status else None
+
+    if has_functional_update and functional_val == "scheduled":
+        is_scheduled = True
+        target_time = applicant.functional_scheduled_at or applicant.attempted_at
+        stage_name = "Functional Interview"
+    elif has_screening_update and screening_val == "scheduled":
+        is_scheduled = True
+        target_time = applicant.screening_scheduled_at or applicant.attempted_at
+        stage_name = "Recruiter Screening"
+
+    if is_scheduled and target_time:
+        job = db.query(Job).filter(Job.id == applicant.job_id).first()
+        job_title = job.role_name or job.title if job else "General Position"
+        recruiter_id = job.created_by_id if job else None
+        
+        # Resolve organizer name and email from Organisation
+        from app.models.organisation import Organisation
+        organizer_name = "IntervieHire Host"
+        organizer_email = settings.SMTP_FROM or "hr@interviehire.com"
+        if job and job.organisation_id:
+            org = db.query(Organisation).filter(Organisation.id == job.organisation_id).first()
+            if org:
+                if org.org_name:
+                    organizer_name = org.org_name
+                if org.contact_email:
+                    organizer_email = org.contact_email
+                
+        summary = f"{stage_name} - {applicant.name}"
+        desc = f"Interview scheduled for the {job_title} role at IntervieHire."
+
+        try:
+            from app.utils.google_calendar import create_calendar_event, update_calendar_event
+            if not applicant.calendar_event_id:
+                # First time scheduling, sequence = 0
+                applicant.calendar_sequence = 0
+                event_id = create_calendar_event(
+                    summary=summary,
+                    description=desc,
+                    candidate_email=applicant.email,
+                    start_time=target_time,
+                    recruiter_id=recruiter_id,
+                    db=db
+                )
+                applicant.calendar_event_id = event_id
+                db.commit()
+                db.refresh(applicant)
+            else:
+                applicant.calendar_sequence = (applicant.calendar_sequence or 0) + 1
+                update_calendar_event(
+                    applicant.calendar_event_id, 
+                    target_time,
+                    recruiter_id=recruiter_id,
+                    db=db
+                )
+                db.commit()
+        except Exception as cal_err:
+            logger.error(f"Failed to update Google Calendar event: {cal_err}")
+
+        try:
+            from app.utils.email_sender import send_ical_invitation_email
+            reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
+            interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+            uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
+            
+            send_ical_invitation_email(
+                candidate_name=applicant.name,
+                candidate_email=applicant.email,
+                job_title=job_title,
+                stage_name=stage_name,
+                start_time=target_time,
+                duration_minutes=30,
+                uid=uid,
+                sequence=applicant.calendar_sequence or 0,
+                organizer_email=organizer_email,
+                reschedule_link=reschedule_link,
+                interview_link=interview_link,
+                organizer_name=organizer_name
+            )
+        except Exception as mail_err:
+            logger.error(f"Failed to send confirmation email: {mail_err}")
 
     if has_functional_update and applicant.functional_status:
         from app.utils.ai_sync import sync_applicant_to_ai
@@ -1728,6 +1867,18 @@ def get_applicant_resume_text(
     return {"text": file_text}
 
 
+@router.get("/applicants/{applicant_id}/screening-report")
+def get_screening_report(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    from app.utils.ai_sync import get_applicant_screening_report
+    return get_applicant_screening_report(db, applicant)
+
+
 @router.get("/applicants/{applicant_id}/functional-vetting")
 def get_functional_vetting(
     applicant_id: UUID,
@@ -1737,4 +1888,140 @@ def get_functional_vetting(
 ):
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
     from app.utils.ai_sync import get_applicant_vetting
-    return get_applicant_vetting(db, str(applicant_id))
+    return get_applicant_vetting(db, str(applicant_id))
+
+from fastapi import Header
+
+@router.post("/webhooks/interview-completed")
+def interview_completed_webhook(
+    payload: dict = Body(...),
+    x_webhook_secret: str = Header(..., alias="X-Webhook-Secret"),
+    db: Session = Depends(get_db)
+):
+    # 1. Verify webhook secret
+    secret = getattr(settings, "WEBHOOK_SECRET", None) or "super-secret-webhook-key"
+    if x_webhook_secret != secret:
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+        
+    session_id = payload.get("sessionId")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="sessionId is required")
+        
+    try:
+        session_uuid = UUID(session_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid UUID format for sessionId")
+        
+    # 2. Query applicant and interview session
+    applicant = db.query(Applicant).filter(Applicant.id == session_uuid).first()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant not found")
+        
+    from app.models.ai_integration import InterviewSession, ProctoringLog, Severity
+    session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+        
+    # 3. Extract evaluation and proctoring info
+    eval_data = session.evaluation or {}
+    overall_score = eval_data.get("overallScore")
+    if overall_score is not None:
+        try:
+            overall_score = float(overall_score)
+        except Exception:
+            overall_score = None
+            
+    # Determine proctoring severity flag based on ProctoringLog entries
+    logs = db.query(ProctoringLog).filter(ProctoringLog.sessionId == session_id).all()
+    critical_logs = [l for l in logs if l.severity in [Severity.CRITICAL, Severity.HIGH]]
+    proctoring_flag = "low"
+    if any(l.severity == Severity.CRITICAL for l in logs):
+        proctoring_flag = "critical"
+    elif len(critical_logs) > 0:
+        proctoring_flag = "high"
+    elif any(l.severity == Severity.MEDIUM for l in logs):
+        proctoring_flag = "medium"
+        
+    from app.models.applicant import CheatProbability
+    # Update applicant slim storage fields
+    applicant.overall_interview_score = overall_score
+    applicant.proctoring_severity_flag = proctoring_flag
+    applicant.functional_score = overall_score
+    applicant.cheat_probability = (
+        CheatProbability.high if proctoring_flag in ["critical", "high"]
+        else CheatProbability.medium if proctoring_flag == "medium"
+        else CheatProbability.low
+    )
+    applicant.functional_status = InterviewStatus.completed
+    applicant.report_url = session.reportUrl
+    
+    # 4. Extract video url from transcript or use uploads
+    video_url = None
+    transcript_list = session.transcript or []
+    import json
+    if isinstance(transcript_list, str):
+        try:
+            transcript_list = json.loads(transcript_list)
+        except Exception:
+            transcript_list = []
+            
+    # Look for recording entries
+    if isinstance(transcript_list, list):
+        recordings = [t for t in transcript_list if isinstance(t, dict) and t.get("type") == "recording"]
+        if recordings:
+            video_url = recordings[-1].get("url") # Use latest recording
+            
+    # Standardize transcript as a readable string
+    transcript_text = ""
+    if isinstance(transcript_list, list):
+        for entry in transcript_list:
+            if isinstance(entry, dict):
+                speaker = entry.get("speaker") or entry.get("type") or "Participant"
+                text = entry.get("text") or ""
+                if text:
+                    transcript_text += f"{speaker}: {text}\n"
+
+    # 5. Write to interview_reports table (Heavy unstructured storage)
+    from app.models.interview_report import InterviewReport
+    report = db.query(InterviewReport).filter(InterviewReport.applicant_id == applicant.id).first()
+    detailed_scores = eval_data.get("dimensionScores") or eval_data
+    
+    if not report:
+        report = InterviewReport(
+            applicant_id=applicant.id,
+            summary=eval_data.get("summary") or "",
+            transcript=transcript_text,
+            video_url=video_url,
+            detailed_scores=detailed_scores
+        )
+        db.add(report)
+    else:
+        report.summary = eval_data.get("summary") or ""
+        report.transcript = transcript_text
+        report.video_url = video_url
+        report.detailed_scores = detailed_scores
+        
+    db.commit()
+    db.refresh(applicant)
+    
+    # 6. Broadcast updates via WebSocket global channel
+    job = db.query(Job).filter(Job.id == applicant.job_id).first()
+    role_name = job.role_name if job else "the position"
+    
+    from app.schemas import OutgoingMessage
+    from app.websocket_manager import manager
+    message = OutgoingMessage(
+        type="candidate_update",
+        content=f"Candidate {applicant.name} evaluation completed for {role_name} with score {overall_score}",
+        sender="System"
+    ).model_dump_json()
+    
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(manager.broadcast(message, room_id="global"))
+    except RuntimeError:
+        pass
+        
+    return {"status": "synced", "applicant_id": str(applicant.id)}
+

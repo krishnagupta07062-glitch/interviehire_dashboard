@@ -1,5 +1,16 @@
 'use client';
 
+if (typeof window !== 'undefined') {
+  const originalError = console.error;
+  console.error = (...args: any[]) => {
+    const msg = args.join(' ');
+    if (msg.includes('INFO:') || msg.includes('WARNING:') || msg.includes('XNNPACK') || msg.includes('delegate')) {
+      return;
+    }
+    originalError(...args);
+  };
+}
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import {
@@ -1536,6 +1547,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
   const aliveRef = useRef(true);
   const lastVideoTimeRef = useRef(-1);
   const safeCalibrationRef = useRef<SafeEightDotCalibration>(buildSafeEightDotCalibration(calibration));
+  const hasCalibrationRef = useRef(!!calibration);
   const gazeFilterRef = useRef<{ x: number; y: number; initialized: boolean }>({ x: 0, y: 0, initialized: false });
   const phoneStateRef = useRef<PhoneState>(createPhoneState());
   const foreignObjectStateRef = useRef<ForeignObjectState>(createForeignObjectState());
@@ -1543,6 +1555,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
 
   useEffect(() => {
     safeCalibrationRef.current = buildSafeEightDotCalibration(calibration);
+    hasCalibrationRef.current = !!calibration;
     gazeFilterRef.current = { x: 0, y: 0, initialized: false };
     headPoseBaselineRef.current = null;
     headPoseSince.current = null;
@@ -2299,6 +2312,20 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
         const currentVideo = videoRef.current;
         const faceTask = faceLandmarkerRef.current;
         const objectTask = objectDetectorRef.current;
+
+        if (!hasCalibrationRef.current) {
+          setState((current) => ({
+            ...current,
+            cameraActive: !!currentVideo?.srcObject,
+            faceDetectorActive: !!faceTask,
+            objectDetectorActive: !!objectTask,
+            lastObservationAt: Date.now(),
+            status: 'Waiting for calibration...',
+          }));
+          frameTimerRef.current = window.setTimeout(tick, LIVE_INTERVAL_MS);
+          return;
+        }
+
         const cameraIssue = getCameraHealthIssue(currentVideo, streamRef.current);
         if (cameraIssue) {
           const now = Date.now();
@@ -2387,7 +2414,15 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
         lastVideoTimeRef.current = currentVideo.currentTime;
 
         missingSince.current = null;
-        const timestamp = performance.now();
+        let timestamp = performance.now();
+        const lastFaceTs = (faceTask as any)?._lastTimestamp || 0;
+        const lastObjectTs = (objectTask as any)?._lastTimestamp || 0;
+        const maxLastTs = Math.max(lastFaceTs, lastObjectTs);
+        if (timestamp <= maxLastTs) {
+          timestamp = maxLastTs + 0.001;
+        }
+        if (faceTask) (faceTask as any)._lastTimestamp = timestamp;
+        if (objectTask) (objectTask as any)._lastTimestamp = timestamp;
 
         let faceResult: FaceLandmarkerResult | null = null;
         let objectResult: ObjectDetectorResult | null = null;

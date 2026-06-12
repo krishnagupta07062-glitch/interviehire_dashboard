@@ -39,6 +39,11 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
 
  export default function Interview(){
   const [sessionId,setSessionId]=useState('demo-session');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -49,6 +54,8 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
       }
     }
   }, []);
+
+
 
   const [calibration, setCalibration] = useState<CalibrationResult | null>(null);
   const [socket,setSocket]=useState<WebSocket|null>(null);
@@ -440,6 +447,19 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
     { label: 'Backend logging', ok: events.length >= 0, detail: 'Proctoring events persist to the API' },
   ];
 
+  const isInterviewFinished = messages.some(m => m.speaker === 'ai' && (m.text.includes('completes the structured interview') || m.text.includes('click Complete session')));
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-[#0b0f19] via-[#0d1222] to-[#05070e] p-6 font-sans text-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-xs uppercase tracking-[0.35em] text-[#d4af37]">Loading interview room</p>
+          <div className="mt-4 h-8 w-8 animate-spin rounded-full border-4 border-[#d4af37] border-t-transparent mx-auto"></div>
+        </div>
+      </main>
+    );
+  }
+
    return (
     <main className="min-h-screen bg-gradient-to-br from-[#0b0f19] via-[#0d1222] to-[#05070e] p-6 font-sans text-slate-100">
       {!calibration && !permissionsReadyForCalibration && (
@@ -554,13 +574,13 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
                 value={text}
                 onChange={e=>setText(e.target.value)}
                 onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); void send(); } }}
-                disabled={isSubmittingAnswer}
-                className="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none text-white placeholder-slate-400 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] transition-all text-sm"
-                placeholder="Type your answer here..."
+                disabled={isSubmittingAnswer || isInterviewFinished}
+                className="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none text-white placeholder-slate-400 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] transition-all text-sm disabled:opacity-50"
+                placeholder={isInterviewFinished ? "Interview completed. Click 'Complete Session' above." : "Type your answer here..."}
               />
               <button
                 onClick={()=>void send()}
-                disabled={!text.trim() || isSubmittingAnswer}
+                disabled={!text.trim() || isSubmittingAnswer || isInterviewFinished}
                 className="rounded-xl bg-[#d4af37] hover:bg-[#c29d2f] text-slate-950 px-5 font-black disabled:cursor-not-allowed disabled:opacity-50 transition-all flex items-center justify-center shadow-[0_0_15px_rgba(212,175,55,0.15)]"
                 title="Submit typed answer"
               >
@@ -568,7 +588,7 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
               </button>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-              <span>{answerStatus}</span>
+              <span>{isInterviewFinished ? "Interview completed! Please click the 'Complete Session' button above." : answerStatus}</span>
             </div>
           </div>
         </section>

@@ -202,6 +202,13 @@ class ApplicantOut(BaseModel):
     recruiter_screening: Optional[str]
     recruiter_screening_score: Optional[float]
     attempted_at: Optional[datetime]
+    screening_scheduled_at: Optional[datetime] = None
+    functional_scheduled_at: Optional[datetime] = None
+    overall_interview_score: Optional[float] = None
+    proctoring_severity_flag: Optional[str] = None
+    calendar_sequence: Optional[int] = 0
+    scheduling_token: Optional[str] = None
+    calendar_event_id: Optional[str] = None
  
     class Config:
         from_attributes = True
@@ -233,6 +240,13 @@ class ApplicantUpdateIn(BaseModel):
     remarks: Optional[str] = None
     match_score: Optional[float] = None
     resume_analysis_report: Optional[str] = None
+    screening_scheduled_at: Optional[datetime] = None
+    functional_scheduled_at: Optional[datetime] = None
+    overall_interview_score: Optional[float] = None
+    proctoring_severity_flag: Optional[str] = None
+    calendar_sequence: Optional[int] = None
+    scheduling_token: Optional[str] = None
+    calendar_event_id: Optional[str] = None
  
 class CollaboratorIn(BaseModel):
     user_id: UUID

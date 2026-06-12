@@ -1,6 +1,13 @@
+import os
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
- 
- 
+
+# Explicitly load .env file from the parent directory of this file
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_env_path = os.path.join(_current_dir, "..", ".env")
+load_dotenv(_env_path)
+
+
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/hiring_dashboard"
@@ -11,6 +18,21 @@ class Settings(BaseSettings):
  
     # CORS
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # SMTP Settings
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM: str = "hr@interviehire.com"
+
+    # Google OAuth 2.0 Credentials
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REFRESH_TOKEN: str | None = None
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/public/oauth2callback"
+    ORGANIZER_CALENDAR_ID: str = "primary"
+    WEBHOOK_SECRET: str = "super-secret-webhook-key"
 
     # API Keys
     GROQ_API_KEY: str | None = None

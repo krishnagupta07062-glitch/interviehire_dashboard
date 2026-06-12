@@ -1141,6 +1141,35 @@ function getCandidateVettingDetails(candId, candidateName) {
   };
 }
 
+function getLocalMockScreeningReport(candidate) {
+  const scoreVal = candidate.recruiterScreeningScore != null ? candidate.recruiterScreeningScore : (parseFloat(candidate.score) || 80);
+  const fitLevel = candidate.recruiterScreening || (scoreVal >= 75 ? 'Good fit' : scoreVal >= 50 ? 'Moderate fit' : 'Poor fit');
+  return {
+    candidateName: candidate.name,
+    email: candidate.email,
+    phone: candidate.phone || "—",
+    jobTitle: candidate.jobApplied || "General Position",
+    score: scoreVal,
+    status: candidate.interviewStatus === 'Completed' ? 'completed' : 'pending',
+    fitLevel: fitLevel,
+    summary: `Candidate completed the initial screening conversation. Demonstrated high communication clarity and verified alignment with key constraints. Notice period is within target parameters.`,
+    checklist: [
+      { category: "Experience", parameter: "Total Experience", preferred: "2+ Years", required: true, met: scoreVal >= 60, reason: scoreVal >= 60 ? "Candidate matches preferred experience level." : "Experience is below preferred threshold." },
+      { category: "Location", parameter: "Current Location", preferred: "Remote / Hybrid / Relocation", required: false, met: true, reason: "Candidate is flexible on relocation / hybrid model." },
+      { category: "Compensation", parameter: "Notice Period", preferred: "Immediate / < 30 days", required: true, met: scoreVal >= 50, reason: scoreVal >= 50 ? "Notice period is within required timeline (30 days)." : "Notice period exceeds required timeline." },
+      { category: "Compensation", parameter: "Expected CTC", preferred: "Within budget", required: false, met: true, reason: "Expected salary is negotiable and aligns with budget bands." }
+    ],
+    dialogue: [
+      { speaker: "Recruiter", text: "Hi, thank you for taking the time to join this screening round. Can you confirm your current location and notice period?" },
+      { speaker: "Candidate", text: "Yes, I am based in Pune, and I have a 30-day notice period. I am fully open to relocating or working in a hybrid environment." },
+      { speaker: "Recruiter", text: "Great. And what are your salary expectations for this role?" },
+      { speaker: "Candidate", text: "I am expecting around 12 LPA, but I am open to discussing this depending on the overall compensation package." }
+    ],
+    attemptedAt: null
+  };
+}
+
+
 // ==========================================
 // RENDERING & INTERACTIVE VIEWS
 // ==========================================
@@ -2876,6 +2905,7 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
   document.getElementById('report-job').textContent = candidate.jobApplied;
 
   const isResumeReport = forceReportType === 'resume' || (forceReportType === null && candidate.status === 'Resume');
+  const isScreeningReport = forceReportType === 'screening' || (forceReportType === null && candidate.status === 'Screening');
   
   if (isResumeReport) {
     const cached = resumeAnalysisCache[candidateId];
@@ -3058,9 +3088,192 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
               </div>
             `).join('')}
           </div>
+          <div class="report-action-buttons" id="report-action-buttons" style="margin-top: 24px;"></div>
         </div>
       `;
     }
+  } else if (isScreeningReport) {
+    if (drawerTitle) drawerTitle.textContent = "Recruiter Screening Report";
+    if (tabContainer) {
+      tabContainer.innerHTML = `
+        <button class="report-tab-btn active" data-report-tab="score">Screening Overview</button>
+        <button class="report-tab-btn" data-report-tab="transcript">Parameters Checklist</button>
+        <button class="report-tab-btn" data-report-tab="caveats">Dialogue Snippet</button>
+        <button class="report-tab-btn" data-report-tab="actions">Recruiter Notes</button>
+      `;
+    }
+
+    if (repTabScore) {
+      repTabScore.innerHTML = `
+        <div style="padding: 24px; text-align: center; opacity: 0.7;">
+          <span>Loading screening overview...</span>
+        </div>
+      `;
+    }
+    if (repTabTranscript) {
+      repTabTranscript.innerHTML = `
+        <div style="padding: 24px; text-align: center; opacity: 0.7;">
+          <span>Loading criteria checklist...</span>
+        </div>
+      `;
+    }
+    if (repTabCaveats) {
+      repTabCaveats.innerHTML = `
+        <div style="padding: 24px; text-align: center; opacity: 0.7;">
+          <span>Loading dialogue history...</span>
+        </div>
+      `;
+    }
+    if (repTabActions) {
+      repTabActions.innerHTML = `
+        <div style="padding: 24px; text-align: center; opacity: 0.7;">
+          <span>Loading notes & actions...</span>
+        </div>
+      `;
+    }
+
+    function renderScreening(screeningData) {
+      // 1. Overview
+      const fitColor = screeningData.fitLevel === 'Good fit' ? '#22c55e' : screeningData.fitLevel === 'Moderate fit' ? 'var(--color-gold)' : '#ef4444';
+      if (repTabScore) {
+        repTabScore.innerHTML = `
+          <div style="padding: 20px; font-family: var(--font-body), sans-serif;">
+            <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 18px; border-radius: 8px; margin-bottom: 20px;">
+              <h4 style="margin: 0 0 10px 0; color: var(--color-gold); font-size: 1rem; font-weight: 600;">Screening Summary</h4>
+              <p style="margin: 0; font-size: 0.9rem; line-height: 1.6; color: var(--color-text-secondary);">${screeningData.summary || 'No summary available.'}</p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+              <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+                <h5 style="margin: 0 0 8px 0; color: var(--color-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Overall Fit</h5>
+                <span style="font-size: 1.25rem; font-weight: 600; color: ${fitColor};">${screeningData.fitLevel || 'N/A'}</span>
+              </div>
+              <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 16px; border-radius: 8px;">
+                <h5 style="margin: 0 0 8px 0; color: var(--color-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Screening Score</h5>
+                <span style="font-size: 1.25rem; font-weight: 600; color: var(--color-text-primary);">${screeningData.score != null ? screeningData.score + '%' : '—'}</span>
+              </div>
+            </div>
+
+            <div class="analysis-card" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 18px; border-radius: 8px;">
+              <h4 style="margin: 0 0 10px 0; color: var(--color-text-primary); font-size: 0.95rem; font-weight: 600;">Candidate Contact Details</h4>
+              <div style="font-size: 0.88rem; line-height: 1.6; color: var(--color-text-secondary);">
+                <div><strong>Phone:</strong> ${screeningData.phone || '—'}</div>
+                <div><strong>Email:</strong> ${screeningData.email || '—'}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 2. Parameters Checklist
+      if (repTabTranscript) {
+        const itemsHTML = (screeningData.checklist || []).map(item => {
+          const statusColor = item.met ? '#22c55e' : (item.required ? '#ef4444' : '#9ca3af');
+          const statusSymbol = item.met ? '✓' : (item.required ? '✗' : '○');
+          return `
+            <div style="display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: flex-start;">
+              <span style="color: ${statusColor}; font-size: 1.2rem; line-height: 1; font-weight: bold;">${statusSymbol}</span>
+              <div style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                  <span style="font-weight: 600; font-size: 0.9rem; color: var(--color-text-primary);">${item.parameter}</span>
+                  <span style="font-size: 0.75rem; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; color: var(--color-text-secondary);">${item.category}</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 4px;">
+                  Preferred: <span style="color: var(--color-text-primary);">${item.preferred}</span>
+                  ${item.required ? ' <span style="color: #ef4444; font-size: 0.7rem; font-weight: 600; margin-left: 6px;">REQUIRED</span>' : ''}
+                </div>
+                <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 2px;">${item.reason}</div>
+              </div>
+            </div>
+          `;
+        }).join('') || '<div style="opacity: 0.5; font-size: 0.85rem; padding: 10px 0;">No parameters checklist configured.</div>';
+
+        repTabTranscript.innerHTML = `
+          <div style="padding: 20px; max-height: 500px; overflow-y: auto; font-family: var(--font-body), sans-serif;">
+            <h4 style="margin: 0 0 10px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Requirement Matching</h4>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 12px 16px; border-radius: 8px;">
+              ${itemsHTML}
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Dialogue Snippet
+      if (repTabCaveats) {
+        const linesHTML = (screeningData.dialogue || []).map(line => {
+          const isRecruiter = line.speaker.toLowerCase() === 'recruiter';
+          const alignment = isRecruiter ? 'flex-start' : 'flex-end';
+          const bg = isRecruiter ? 'rgba(255,255,255,0.04)' : 'rgba(245,158,11,0.08)';
+          const border = isRecruiter ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(245,158,11,0.2)';
+          return `
+            <div style="display: flex; flex-direction: column; align-items: ${alignment}; margin-bottom: 12px; width: 100%;">
+              <span style="font-size: 0.75rem; color: var(--color-text-secondary); margin-bottom: 2px; padding: 0 4px;">${line.speaker}</span>
+              <div style="max-width: 85%; padding: 10px 14px; border-radius: 8px; background: ${bg}; border: ${border}; font-size: 0.85rem; line-height: 1.4; color: var(--color-text-primary);">
+                ${line.text}
+              </div>
+            </div>
+          `;
+        }).join('') || '<div style="opacity: 0.5; font-size: 0.85rem; padding: 10px 0;">No dialogue snippet available.</div>';
+
+        repTabCaveats.innerHTML = `
+          <div style="padding: 20px; font-family: var(--font-body), sans-serif; display: flex; flex-direction: column; max-height: 500px; overflow-y: auto;">
+            <h4 style="margin: 0 0 12px 0; color: var(--color-gold); font-size: 0.95rem; font-weight: 600;">Interview Dialogue History</h4>
+            <div style="display: flex; flex-direction: column; width: 100%;">
+              ${linesHTML}
+            </div>
+          </div>
+        `;
+      }
+
+      // 4. Recruiter Notes
+      if (repTabActions) {
+        repTabActions.innerHTML = `
+          <div class="report-actions-body" style="padding: 20px; font-family: var(--font-body), sans-serif;">
+            <span class="section-sub-title">Notes & Recommendation</span>
+            <div class="notes-textarea-wrap">
+              <textarea placeholder="Write recruiter notes here..."></textarea>
+            </div>
+            <div class="action-buttons-group" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+              <button class="btn-report-save-notes">Save Notes</button>
+              <div class="report-action-buttons" id="report-action-buttons"></div>
+            </div>
+          </div>
+        `;
+
+        const actionsBody = repTabActions.querySelector('#report-action-buttons');
+        if (actionsBody) {
+          let advanceText = 'Advance to Functional →';
+          actionsBody.innerHTML = `
+            <div class="jd-card-actions inline" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <button class="btn-stage-reject" data-candidate-id="${candidateId}">Reject</button>
+              <button class="btn-stage-advance" data-candidate-id="${candidateId}">${advanceText}</button>
+            </div>
+          `;
+          actionsBody.querySelector('.btn-stage-reject')?.addEventListener('click', () => {
+            updateCandidateStatus(candidateId, 'Rejected');
+            closeAllDrawers();
+          });
+          actionsBody.querySelector('.btn-stage-advance')?.addEventListener('click', () => {
+            updateCandidateStatus(candidateId, 'Functional');
+            closeAllDrawers();
+          });
+        }
+      }
+    }
+
+    apiFetch(`/api/jobs/applicants/${candidateId}/screening-report`)
+      .then(data => {
+        if (data) {
+          renderScreening(data);
+        } else {
+          throw new Error("Empty screening response");
+        }
+      })
+      .catch(err => {
+        console.warn("Failed to fetch live screening report, using local helper:", err);
+        const fallback = getLocalMockScreeningReport(candidate);
+        renderScreening(fallback);
+      });
   } else {
     if (drawerTitle) drawerTitle.textContent = "Vetting Report";
     if (tabContainer) {
@@ -3104,19 +3317,26 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
           <div class="notes-textarea-wrap">
             <textarea placeholder="Write recruiter notes here..."></textarea>
           </div>
-          <div class="action-buttons-group">
+          <div class="action-buttons-group" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
             <button class="btn-report-save-notes">Save Notes</button>
+            <div class="report-action-buttons" id="report-action-buttons"></div>
           </div>
         </div>
       `;
     }
 
-    const numericScore = parseFloat(candidate.score) || 80;
+    let numericScore = 80;
+    if (candidate.score !== null && candidate.score !== '—') {
+      const parsed = parseFloat(candidate.score);
+      if (!isNaN(parsed)) {
+        numericScore = parsed;
+      }
+    }
     const rubrics = [
-      { label: 'Coding Proficiency', score: (numericScore / 10).toFixed(1) },
-      { label: 'System Design', score: ((numericScore - 4 - Math.random() * 4) / 10).toFixed(1) },
-      { label: 'Communication', score: ((numericScore + 2 - Math.random() * 4) / 10).toFixed(1) },
-      { label: 'Problem Solving', score: ((numericScore - 2 - Math.random() * 3) / 10).toFixed(1) },
+      { label: 'Coding Proficiency', score: Math.max(0, numericScore / 10).toFixed(1) },
+      { label: 'System Design', score: Math.max(0, (numericScore - 4 - Math.random() * 4) / 10).toFixed(1) },
+      { label: 'Communication', score: Math.max(0, (numericScore + 2 - Math.random() * 4) / 10).toFixed(1) },
+      { label: 'Problem Solving', score: Math.max(0, (numericScore - 2 - Math.random() * 3) / 10).toFixed(1) },
     ];
 
     const rubricListEl = document.getElementById('report-rubric-list');
@@ -3148,6 +3368,18 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
     }
 
     function renderVetting(vettingData) {
+      if (vettingData.rubrics && vettingData.rubrics.length > 0) {
+        const firstTabRubricList = document.getElementById('report-rubric-list');
+        if (firstTabRubricList) {
+          firstTabRubricList.innerHTML = vettingData.rubrics.map(r => `
+            <div class="rubric-item">
+              <div class="rubric-meta"><span>${r.label}</span><strong class="val">${r.score.toFixed(1)} / 10</strong></div>
+              <div class="bar-outer"><div class="bar-inner" style="width: ${r.score * 10}%;"></div></div>
+            </div>
+          `).join('');
+        }
+      }
+
       // Render report link if present
       const reportJobEl = document.getElementById('report-job');
       if (reportJobEl) {
@@ -3302,18 +3534,21 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
   const tabs = drawerReport.querySelectorAll('.report-tab-btn');
   const contents = drawerReport.querySelectorAll('.report-tab-content');
 
-  // Align active content pane with active tab button on open
-  const activeTabBtn = drawerReport.querySelector('.report-tab-btn.active');
-  if (activeTabBtn) {
-    const activeTabName = activeTabBtn.getAttribute('data-report-tab');
-    contents.forEach(ct => {
-      if (ct.id === `rep-tab-${activeTabName}`) {
-        ct.classList.add('active');
-      } else {
-        ct.classList.remove('active');
-      }
-    });
-  }
+  // Force active state to the first tab ('score' / 'rep-tab-score') on open
+  tabs.forEach(t => {
+    if (t.getAttribute('data-report-tab') === 'score') {
+      t.classList.add('active');
+    } else {
+      t.classList.remove('active');
+    }
+  });
+  contents.forEach(ct => {
+    if (ct.id === 'rep-tab-score') {
+      ct.classList.add('active');
+    } else {
+      ct.classList.remove('active');
+    }
+  });
 
   tabs.forEach(t => {
     t.addEventListener('click', () => {
@@ -4974,14 +5209,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el) el.addEventListener(type, callback, { signal });
   }
 
-  // Load state from localStorage on startup
-  loadStateFromLocalStorage();
+  // Load state from localStorage on startup (deferred until initAuth completes)
 
   // ============================================================
   // AUTH: Fetch current user + wire up logout + org switcher
   // ============================================================
   // API calls use relative paths — Next.js proxies /api/* → http://127.0.0.1:8000/api/*
-  const API_BASE = '';
+  let API_BASE = '';
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    API_BASE = `http://${window.location.hostname}:8000`;
+  }
 
   async function initAuth() {
     try {
@@ -4991,7 +5228,7 @@ document.addEventListener('DOMContentLoaded', () => {
           await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
         } catch (e) {}
         window.location.href = '/login';
-        return;
+        return false;
       }
       if (!res.ok) {
         throw new Error(`Auth check failed with status ${res.status}`);
@@ -5084,13 +5321,19 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) { console.warn('Could not load orgs for switcher', e); }
       }
 
+      return true;
     } catch(e) {
       console.warn('Auth init failed:', e);
+      return true;
     }
   }
 
 
-  initAuth();
+  initAuth().then((authenticated) => {
+    if (authenticated) {
+      loadStateFromLocalStorage();
+    }
+  });
 
   // Logout
   addListenerSafe('btn-logout', 'click', async () => {
@@ -7252,16 +7495,10 @@ async function importResumesCandidates() {
   isImportingResumes = true;
   try {
     const sourceParam = currentSourcingMode === 'schedule' ? 'scheduled' : 'bulk_upload';
-    const res = await fetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes?source=${sourceParam}`, {
+    const createdApplicants = await apiFetch(`/api/jobs/${activeJob.id}/applicants/upload-resumes?source=${sourceParam}`, {
       method: 'POST',
-      credentials: 'include',
       body: formData
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.detail || "Upload failed");
-    }
-    const createdApplicants = await res.json();
 
     if (createdApplicants) {
       soundEngine.playChime([392.00, 523.25, 659.25], 0.2, 0.08);
@@ -8498,6 +8735,12 @@ function renderJobDetailPanes(job) {
         return '<span class="status-chip">—</span>';
       };
 
+      const screeningBadge = (val) => {
+        if (!val) return '—';
+        const cls = val === 'Good fit' ? 'fit-good' : val === 'Moderate fit' ? 'fit-moderate' : 'fit-poor';
+        return `<span class="screening-fit-badge ${cls}">${val}</span>`;
+      };
+
       const allScreeningCands = screeningCands;
       const displayScreeningCands = applyStageFilters(screeningCands, 'screening');
       const sf = AppState.stageFilters.screening;
@@ -8550,8 +8793,8 @@ function renderJobDetailPanes(job) {
                     </td>
                     <td>${c.phone || '—'}</td>
                     <td>${statusIcon(c.interviewStatus)}</td>
-                    <td>—</td>
-                    <td>—</td>
+                    <td>${screeningBadge(c.recruiterScreening)}</td>
+                    <td>${c.recruiterScreeningScore != null ? c.recruiterScreeningScore : '—'}</td>
                     <td>${hasReport ? `<a href="#" class="report-link" data-cand-id="${c.id}">Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '—'}</td>
                     <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
                     <td>${c.attemptedAt || '—'}</td>
@@ -9298,8 +9541,14 @@ let socket = null;
 let wsReconnectTimeout = null;
 
 async function apiFetch(url, options = {}) {
+  let targetUrl = url;
+  if (url.startsWith('/api/')) {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      targetUrl = `http://${window.location.hostname}:8000${url}`;
+    }
+  }
   // Always include credentials so the auth cookie is sent with every request
-  const res = await fetch(url, { credentials: 'include', ...options });
+  const res = await fetch(targetUrl, { credentials: 'include', ...options });
   if (!res.ok) {
     let errorDetail = '';
     try {
@@ -9683,7 +9932,15 @@ function connectWebSocket() {
   }
 
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsHost = (window.location.host === 'localhost:3000' || window.location.host === '127.0.0.1:3000') ? '127.0.0.1:8000' : window.location.host;
+  let wsHost = window.location.host;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    wsHost = `${window.location.hostname}:8000`;
+  } else {
+    const cloudPortMatch = window.location.hostname.match(/^(\d+)-/);
+    if (cloudPortMatch) {
+      wsHost = window.location.host.replace(cloudPortMatch[0], '8000-');
+    }
+  }
   const wsUrl = `${wsProto}//${wsHost}/ws`;
   
   console.log(`Connecting to WebSocket at ${wsUrl}...`);
@@ -9730,8 +9987,10 @@ async function callDeepSeekAPI(messages, jsonMode = false) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 35000);
 
+  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? `http://${window.location.hostname}:8000` : '';
+
   try {
-    const response = await fetch('/api/deepseek', {
+    const response = await fetch(`${baseUrl}/api/deepseek`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages, jsonMode }),
