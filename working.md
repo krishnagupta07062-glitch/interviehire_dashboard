@@ -115,3 +115,14 @@ This file tracks all modifications made to the codebase in response to user requ
   4. **Functional Stage Pane Rendering Restoration**: Fixed a syntax bug in the `functionalList` rendering block where an opening `} else {` statement was accidentally removed. Restoring it fixed a javascript runtime error and successfully restored candidate table rendering under the Functional tab.
   5. **Interview Page Styling Fix**: Created [globals.css](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/frontend-final-final/app/globals.css) and [layout.tsx](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/frontend-final-final/app/interview/layout.tsx) for the interview route to import TailwindCSS styles globally for the interview room without polluting other layouts/styling rules in the project.
   6. **Clean TypeScript Compilation**: Checked with local typecheck dry run (`tsc --noEmit`), verifying 100% clean build.
+
+## Prompt 12: Supabase IPv4 Pooler Cluster Connection Fix
+- **Date**: 2026-06-13
+- **Goal**: Resolve database connection errors on startup due to IPv6-only direct connection hostname routing failures on IPv4-only networks.
+- **Changes Made**:
+  1. **IP Range Scanning**: Mapped the database domain's IPv6 address (`2406:da18:167b:f900:8243:f4a1:9f6d:65bb`) to AWS Singapore region (`ap-southeast-1`).
+  2. **Active Pooler Verification**: Scanned the Supabase pooler clusters for `ap-southeast-1` and verified that cluster `aws-1` is active and successfully routes queries.
+  3. **Updated Environment Files**: Modified `DATABASE_URL` in [backend/.env](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/backend/.env) and [ai_components/.env](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/ai_components/.env) to point to:
+     `postgresql://postgres.spzjiqcosxcmzyrctjyh:tic*tac*toe@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres`
+  4. **Verification**: Executed database query tests using SQLAlchemy and Prisma, verifying 100% successful database connection.
+
