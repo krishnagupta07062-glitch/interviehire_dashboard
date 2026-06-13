@@ -8,6 +8,26 @@ import { buildVapiAssistantConfig } from '../services/vapi-config.service.js';
 import { processRecordingForSession, transcribeUploadedFile } from '../services/transcription.service.js';
 import { handleCandidateTranscript } from '../services/interview-conversation.service.js';
 
+interface SpeechTranscriptSegment {
+  speaker: 'candidate';
+  text: string;
+  timestamp: string;
+  source: 'speech_to_text';
+}
+
+function readTranscript(raw: any): any[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) || [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+
 const juniorSdeQuestions = [
   {
     text: 'Explain the difference between an array and a linked list. When would you choose one over the other?',
@@ -265,7 +285,7 @@ export async function interviewRoutes(app: FastifyInstance) {
         timestamp: typeof segment?.timestamp === 'string' ? segment.timestamp : new Date().toISOString(),
         source: 'speech_to_text' as const,
       }))
-      .filter((segment: SpeechTranscriptSegment) => segment.text.length > 0);
+      .filter((segment: any) => segment.text.length > 0);
 
     if (!transcript.length) {
       return reply.code(400).send({ error: 'Transcript must contain at least one text segment' });
@@ -290,10 +310,10 @@ export async function interviewRoutes(app: FastifyInstance) {
 
     const current = readTranscript(session.transcript);
     const existingIndex = current.findIndex(
-      (item) => item?.type === 'speech_to_text_transcript' && item?.transcriptId === transcriptId,
+      (item: any) => item?.type === 'speech_to_text_transcript' && item?.transcriptId === transcriptId,
     );
     const updated = existingIndex >= 0
-      ? current.map((item, index) => index === existingIndex ? { ...item, ...entry, createdAt: item.createdAt ?? entry.createdAt } : item)
+      ? current.map((item: any, index: number) => index === existingIndex ? { ...item, ...entry, createdAt: item.createdAt ?? entry.createdAt } : item)
       : [...current, entry];
     await prisma.interviewSession.update({ where: { id: req.params.id }, data: { transcript: updated as any } });
 

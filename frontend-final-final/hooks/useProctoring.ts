@@ -11,7 +11,7 @@ if (typeof window !== 'undefined') {
   };
 }
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import {
   FaceLandmarker,
@@ -208,15 +208,8 @@ function isMicrophoneCaptureSupported() {
 }
 
 function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions = {}) {
-  const {
-    defaultClipMs = DEFAULT_VIOLATION_SCREEN_CLIP_MS,
-    minClipMs = MIN_VIOLATION_SCREEN_CLIP_MS,
-    maxClipMs = MAX_VIOLATION_SCREEN_CLIP_MS,
-    timesliceMs = VIOLATION_SCREEN_RECORDING_TIMESLICE_MS,
-    onClipReady,
-    onError,
-    onScreenShareStopped,
-  } = options;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   const [hasScreenSharePermission, setHasScreenSharePermission] = useState(false);
   const [isRecordingViolation, setIsRecordingViolation] = useState(false);
@@ -239,9 +232,9 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
   const emitRecorderError = useCallback(
     (error: Error) => {
       setScreenShareError(error.message);
-      onError?.(error);
+      optionsRef.current.onError?.(error);
     },
-    [onError],
+    [],
   );
 
   const stopScreenShare = useCallback(() => {
@@ -282,7 +275,7 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
         videoTrack.onended = () => {
           setHasScreenSharePermission(false);
           screenStreamRef.current = null;
-          onScreenShareStopped?.();
+          optionsRef.current.onScreenShareStopped?.();
         };
       }
 
@@ -292,7 +285,7 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
       emitRecorderError(err);
       return false;
     }
-  }, [emitRecorderError, onScreenShareStopped, stopScreenShare]);
+  }, [emitRecorderError, stopScreenShare]);
 
   const finalizeRecording = useCallback(() => {
     const meta = activeMetaRef.current;
@@ -323,8 +316,8 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     activeMetaRef.current = null;
     setIsRecordingViolation(false);
 
-    void onClipReady?.(clip);
-  }, [onClipReady]);
+    void optionsRef.current.onClipReady?.(clip);
+  }, []);
 
   const stopViolationRecording = useCallback(() => {
     const recorder = recorderRef.current;
@@ -341,6 +334,7 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
       }
     };
 
+    const minClipMs = optionsRef.current.minClipMs ?? MIN_VIOLATION_SCREEN_CLIP_MS;
     if (elapsedMs < minClipMs && typeof window !== 'undefined') {
       clearTimer(pendingStopTimerRef);
       pendingStopTimerRef.current = window.setTimeout(stopNow, minClipMs - elapsedMs);
@@ -348,7 +342,7 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     }
 
     stopNow();
-  }, [clearTimer, minClipMs]);
+  }, [clearTimer]);
 
   const startViolationRecording = useCallback(
     (type: ProctoringViolationType, details?: Record<string, unknown>) => {
@@ -401,14 +395,14 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
 
         recorderRef.current = recorder;
         activeMetaRef.current = meta;
-        recorder.start(timesliceMs);
+        recorder.start(optionsRef.current.timesliceMs ?? VIOLATION_SCREEN_RECORDING_TIMESLICE_MS);
         setIsRecordingViolation(true);
 
         clearTimer(autoStopTimerRef);
         if (typeof window !== 'undefined') {
           autoStopTimerRef.current = window.setTimeout(() => {
             stopViolationRecording();
-          }, maxClipMs);
+          }, optionsRef.current.maxClipMs ?? MAX_VIOLATION_SCREEN_CLIP_MS);
         }
 
         return true;
@@ -418,22 +412,26 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
         return false;
       }
     },
-    [clearTimer, emitRecorderError, finalizeRecording, maxClipMs, stopViolationRecording, timesliceMs],
+    [clearTimer, emitRecorderError, finalizeRecording, stopViolationRecording],
   );
 
   const recordViolationClip = useCallback(
-    (type: ProctoringViolationType, details?: Record<string, unknown>, clipMs = defaultClipMs) => {
+    (type: ProctoringViolationType, details?: Record<string, unknown>, clipMs?: number) => {
+      const activeClipMs = clipMs ?? optionsRef.current.defaultClipMs ?? DEFAULT_VIOLATION_SCREEN_CLIP_MS;
       const started = startViolationRecording(type, details);
       if (!started) return false;
       if (typeof window === 'undefined') return true;
 
+      const activeMinClipMs = optionsRef.current.minClipMs ?? MIN_VIOLATION_SCREEN_CLIP_MS;
+      const activeMaxClipMs = optionsRef.current.maxClipMs ?? MAX_VIOLATION_SCREEN_CLIP_MS;
+
       window.setTimeout(() => {
         stopViolationRecording();
-      }, Math.min(Math.max(clipMs, minClipMs), maxClipMs));
+      }, Math.min(Math.max(activeClipMs, activeMinClipMs), activeMaxClipMs));
 
       return true;
     },
-    [defaultClipMs, maxClipMs, minClipMs, startViolationRecording, stopViolationRecording],
+    [startViolationRecording, stopViolationRecording],
   );
 
   useEffect(() => {
@@ -448,7 +446,7 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     };
   }, [clearTimer]);
 
-  return {
+  return useMemo(() => ({
     hasScreenSharePermission,
     isRecordingViolation,
     screenShareError,
@@ -457,7 +455,16 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     startViolationRecording,
     stopViolationRecording,
     recordViolationClip,
-  };
+  }), [
+    hasScreenSharePermission,
+    isRecordingViolation,
+    screenShareError,
+    requestScreenShare,
+    stopScreenShare,
+    startViolationRecording,
+    stopViolationRecording,
+    recordViolationClip,
+  ]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1561,12 +1568,18 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     headPoseSince.current = null;
   }, [calibration]);
 
+  const socketRef = useRef(socket);
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
+
   const emit = useCallback((eventType: string, severity: Severity, metadata: Record<string, unknown> = {}) => {
     const now = Date.now();
     const payload: ProctoringPayload = { type: 'proctoring_event', sessionId, eventType, severity, metadata, timestamp: now };
-    socket?.readyState === 1 && socket.send(JSON.stringify(payload));
+    const currentSocket = socketRef.current;
+    currentSocket?.readyState === 1 && currentSocket.send(JSON.stringify(payload));
     setEvents((current) => [{ eventType, severity, timestamp: now, metadata }, ...current].slice(0, 10));
-  }, [sessionId, socket]);
+  }, [sessionId]);
 
   function emitWithCooldown(ref: { current: number }, eventType: string, severity: Severity, metadata: Record<string, unknown> = {}) {
     const now = Date.now();

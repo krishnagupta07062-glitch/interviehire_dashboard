@@ -54,9 +54,30 @@ UPLOAD_DIR = "uploads/jd"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def _build_job_out(job: Job, db: Session) -> dict:
+def _build_job_out(job: Job, db: Session, pipeline_counts: Optional[dict] = None) -> dict:
     """Helper to build JobOut with pipeline counts."""
-    applicants = db.query(Applicant).filter(Applicant.job_id == job.id).all()
+    import sqlalchemy
+    from sqlalchemy import func
+    from app.models.applicant import Applicant
+    
+    if pipeline_counts is not None:
+        total_count = pipeline_counts.get("total", 0)
+        resume_count = pipeline_counts.get("resume", 0)
+        screening_count = pipeline_counts.get("screening", 0)
+        functional_count = pipeline_counts.get("functional", 0)
+    else:
+        counts = db.query(
+            func.count(Applicant.id),
+            func.sum(sqlalchemy.case((Applicant.resume_analysed == True, 1), else_=0)),
+            func.sum(sqlalchemy.case((Applicant.screening_status.isnot(None), 1), else_=0)),
+            func.sum(sqlalchemy.case((Applicant.functional_status.isnot(None), 1), else_=0))
+        ).filter(Applicant.job_id == job.id).first()
+
+        total_count = counts[0] or 0
+        resume_count = counts[1] or 0
+        screening_count = counts[2] or 0
+        functional_count = counts[3] or 0
+
     import json
     tags = []
     if job.tags:
@@ -69,10 +90,10 @@ def _build_job_out(job: Job, db: Session) -> dict:
         "created_by_name": job.created_by.name if job.created_by else None,
         "tags": tags,
         "pipeline": JobPipelineCounts(
-            total=len(applicants),
-            resume=sum(1 for a in applicants if a.resume_analysed),  # count analysed resumes
-            screening=sum(1 for a in applicants if a.screening_status is not None),
-            functional=sum(1 for a in applicants if a.functional_status is not None),
+            total=total_count,
+            resume=resume_count,
+            screening=screening_count,
+            functional=functional_count,
         ),
         "resume_parameters": json.loads(job.resume_parameters) if job.resume_parameters else None,
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
@@ -91,7 +112,12 @@ def list_jobs(
     active_org_id: Optional[UUID] = Depends(get_active_org_id),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Job)
+    from sqlalchemy.orm import joinedload
+    import sqlalchemy
+    from sqlalchemy import func
+    from app.models.applicant import Applicant
+
+    query = db.query(Job).options(joinedload(Job.created_by))
     if current_user.user_type == UserType.super_admin:
         query = query.filter(Job.organisation_id == active_org_id)
     elif current_user.user_type == UserType.org_admin:
@@ -101,13 +127,33 @@ def list_jobs(
         query = query.join(Job.collaborators).filter(JobCollaborator.user_id == current_user.id)
 
     all_visible_jobs = query.all()
+    visible_job_ids = [j.id for j in all_visible_jobs]
+
+    # Pre-fetch pipeline counts for all visible jobs in a single query!
+    pipeline_counts_dict = {}
+    if visible_job_ids:
+        counts_by_job = db.query(
+            Applicant.job_id,
+            func.count(Applicant.id),
+            func.sum(sqlalchemy.case((Applicant.resume_analysed == True, 1), else_=0)),
+            func.sum(sqlalchemy.case((Applicant.screening_status.isnot(None), 1), else_=0)),
+            func.sum(sqlalchemy.case((Applicant.functional_status.isnot(None), 1), else_=0))
+        ).filter(Applicant.job_id.in_(visible_job_ids)).group_by(Applicant.job_id).all()
+
+        for job_id, total, resume, screening, functional in counts_by_job:
+            pipeline_counts_dict[job_id] = {
+                "total": total,
+                "resume": resume or 0,
+                "screening": screening or 0,
+                "functional": functional or 0
+            }
     
     if status and status != "all":
         query = query.filter(Job.status == status)
     jobs = query.order_by(Job.created_at.desc()).all()
 
     return JobListOut(
-        jobs=[_build_job_out(j, db) for j in jobs],
+        jobs=[_build_job_out(j, db, pipeline_counts_dict.get(j.id)) for j in jobs],
         total=len(all_visible_jobs),
         published=sum(1 for j in all_visible_jobs if j.status == JobStatus.published),
         draft=sum(1 for j in all_visible_jobs if j.status == JobStatus.draft),
@@ -1315,12 +1361,32 @@ def delete_job(
 ):
     job = _verify_job_access(job_id, current_user, active_org_id, db)
     
+    # Clean up related AI-integration records first to prevent orphaned records in other tables
+    from app.models.ai_integration import Candidate, JobRole, Question
+    
+    # 1. Fetch applicant IDs for this job
+    applicants = db.query(Applicant).filter(Applicant.job_id == job_id).all()
+    applicant_ids = [str(a.id) for a in applicants]
+    
+    # 2. Delete Questions associated with this JobRole
+    db.query(Question).filter(Question.jobRoleId == str(job_id)).delete(synchronize_session=False)
+    
+    # 3. Delete Candidate records (cascades to InterviewSession and ProctoringLog in PostgreSQL)
+    if applicant_ids:
+        db.query(Candidate).filter(Candidate.id.in_(applicant_ids)).delete(synchronize_session=False)
+        
+    # 4. Delete the JobRole record itself
+    db.query(JobRole).filter(JobRole.id == str(job_id)).delete(synchronize_session=False)
+    
+    # 5. Delete applicants and collaborators
     db.query(Applicant).filter(Applicant.job_id == job_id).delete(synchronize_session=False)
     db.query(JobCollaborator).filter(JobCollaborator.job_id == job_id).delete(synchronize_session=False)
     
+    # 6. Delete the job
     db.delete(job)
     db.commit()
     return {"message": f"Job {job_id} successfully deleted"}
+
 
 
 @router.patch("/{job_id}/parameters", response_model=JobDetailOut)
@@ -1609,9 +1675,7 @@ def upload_resumes(
             if not existing_applicant.source and source:
                 existing_applicant.source = source
                 
-            # If the source is scheduled, ensure screening_status is set
-            if existing_applicant.source == ApplicantSource.scheduled and not existing_applicant.screening_status:
-                existing_applicant.screening_status = InterviewStatus.pending
+
                 
             # Update candidate details if they were defaults or unset
             if parsed_email and ("@candidate.io" in existing_applicant.email or not existing_applicant.email):
@@ -1636,8 +1700,7 @@ def upload_resumes(
                 job_id=job_id,
                 resume_analysed=False
             )
-            if applicant.source == ApplicantSource.scheduled:
-                applicant.screening_status = InterviewStatus.pending
+
             db.add(applicant)
             created_applicants.append(applicant)
         
@@ -1800,7 +1863,9 @@ def schedule_interview(
     # Send confirmation email with calendar invite and interview link
     try:
         reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-        interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+        from app.utils.ai_sync import get_stage_session_id
+        session_id = get_stage_session_id(applicant.id, stage)
+        interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={session_id}"
         uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
         send_ical_invitation_email(
             candidate_name=applicant.name,
@@ -1934,17 +1999,42 @@ def interview_completed_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid UUID format for sessionId")
         
-    # 2. Query applicant and interview session
-    applicant = db.query(Applicant).filter(Applicant.id == session_uuid).first()
-    if not applicant:
-        raise HTTPException(status_code=404, detail="Applicant not found")
-        
+    # 2. Query interview session first
     from app.models.ai_integration import InterviewSession, ProctoringLog, Severity
     session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Interview session not found")
         
-    # 3. Extract evaluation and proctoring info
+    # Query applicant using candidateId from session
+    applicant = None
+    try:
+        candidate_uuid = UUID(session.candidateId)
+        applicant = db.query(Applicant).filter(Applicant.id == candidate_uuid).first()
+    except Exception:
+        pass
+        
+    # Fallback to direct sessionId matching (legacy)
+    if not applicant:
+        applicant = db.query(Applicant).filter(Applicant.id == session_uuid).first()
+        
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant not found")
+        
+    # 3. Determine stage (screening or functional)
+    from app.utils.ai_sync import get_stage_session_id
+    screening_session_id = get_stage_session_id(applicant.id, "screening")
+    functional_session_id = get_stage_session_id(applicant.id, "functional")
+    
+    is_screening = False
+    if session_id == screening_session_id:
+        is_screening = True
+    elif session_id == functional_session_id:
+        is_screening = False
+    else:
+        # Fallback for legacy / direct session IDs
+        is_screening = (applicant.functional_status is None)
+        
+    # 4. Extract evaluation and proctoring info
     eval_data = session.evaluation or {}
     overall_score = eval_data.get("overallScore")
     if overall_score is not None:
@@ -1964,65 +2054,73 @@ def interview_completed_webhook(
     elif any(l.severity == Severity.MEDIUM for l in logs):
         proctoring_flag = "medium"
         
-    from app.models.applicant import CheatProbability
-    # Update applicant slim storage fields
-    applicant.overall_interview_score = overall_score
-    applicant.proctoring_severity_flag = proctoring_flag
-    applicant.functional_score = overall_score
-    applicant.cheat_probability = (
-        CheatProbability.high if proctoring_flag in ["critical", "high"]
-        else CheatProbability.medium if proctoring_flag == "medium"
-        else CheatProbability.low
-    )
-    applicant.functional_status = InterviewStatus.completed
-    applicant.report_url = session.reportUrl
-    
-    # 4. Extract video url from transcript or use uploads
-    video_url = None
-    transcript_list = session.transcript or []
-    import json
-    if isinstance(transcript_list, str):
-        try:
-            transcript_list = json.loads(transcript_list)
-        except Exception:
-            transcript_list = []
-            
-    # Look for recording entries
-    if isinstance(transcript_list, list):
-        recordings = [t for t in transcript_list if isinstance(t, dict) and t.get("type") == "recording"]
-        if recordings:
-            video_url = recordings[-1].get("url") # Use latest recording
-            
-    # Standardize transcript as a readable string
-    transcript_text = ""
-    if isinstance(transcript_list, list):
-        for entry in transcript_list:
-            if isinstance(entry, dict):
-                speaker = entry.get("speaker") or entry.get("type") or "Participant"
-                text = entry.get("text") or ""
-                if text:
-                    transcript_text += f"{speaker}: {text}\n"
-
-    # 5. Write to interview_reports table (Heavy unstructured storage)
-    from app.models.interview_report import InterviewReport
-    report = db.query(InterviewReport).filter(InterviewReport.applicant_id == applicant.id).first()
-    detailed_scores = eval_data.get("dimensionScores") or eval_data
-    
-    if not report:
-        report = InterviewReport(
-            applicant_id=applicant.id,
-            summary=eval_data.get("summary") or "",
-            transcript=transcript_text,
-            video_url=video_url,
-            detailed_scores=detailed_scores
-        )
-        db.add(report)
+    if is_screening:
+        # Update Recruiter Screening stage
+        applicant.screening_score = overall_score
+        applicant.recruiter_screening_score = overall_score
+        applicant.screening_status = InterviewStatus.completed
+        applicant.recruiter_screening = eval_data.get("summary") or eval_data.get("recommendation") or "completed"
+        applicant.attempted_at = session.completedAt or func.now()
     else:
-        report.summary = eval_data.get("summary") or ""
-        report.transcript = transcript_text
-        report.video_url = video_url
-        report.detailed_scores = detailed_scores
+        # Update Functional stage
+        from app.models.applicant import CheatProbability
+        applicant.overall_interview_score = overall_score
+        applicant.proctoring_severity_flag = proctoring_flag
+        applicant.functional_score = overall_score
+        applicant.cheat_probability = (
+            CheatProbability.high if proctoring_flag in ["critical", "high"]
+            else CheatProbability.medium if proctoring_flag == "medium"
+            else CheatProbability.low
+        )
+        applicant.functional_status = InterviewStatus.completed
+        applicant.report_url = session.reportUrl
         
+        # Extract video url from transcript or use uploads
+        video_url = None
+        transcript_list = session.transcript or []
+        import json
+        if isinstance(transcript_list, str):
+            try:
+                transcript_list = json.loads(transcript_list)
+            except Exception:
+                transcript_list = []
+                
+        # Look for recording entries
+        if isinstance(transcript_list, list):
+            recordings = [t for t in transcript_list if isinstance(t, dict) and t.get("type") == "recording"]
+            if recordings:
+                video_url = recordings[-1].get("url") # Use latest recording
+                
+        # Standardize transcript as a readable string
+        transcript_text = ""
+        if isinstance(transcript_list, list):
+            for entry in transcript_list:
+                if isinstance(entry, dict):
+                    speaker = entry.get("speaker") or entry.get("type") or "Participant"
+                    text = entry.get("text") or ""
+                    if text:
+                        transcript_text += f"{speaker}: {text}\n"
+                        
+        # Write to interview_reports table (Heavy unstructured storage)
+        from app.models.interview_report import InterviewReport
+        report = db.query(InterviewReport).filter(InterviewReport.applicant_id == applicant.id).first()
+        detailed_scores = eval_data.get("dimensionScores") or eval_data
+        
+        if not report:
+            report = InterviewReport(
+                applicant_id=applicant.id,
+                summary=eval_data.get("summary") or "",
+                transcript=transcript_text,
+                video_url=video_url,
+                detailed_scores=detailed_scores
+            )
+            db.add(report)
+        else:
+            report.summary = eval_data.get("summary") or ""
+            report.transcript = transcript_text
+            report.video_url = video_url
+            report.detailed_scores = detailed_scores
+            
     db.commit()
     db.refresh(applicant)
     

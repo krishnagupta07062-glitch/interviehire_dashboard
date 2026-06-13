@@ -45,8 +45,54 @@ export async function registerWebsocket(app: FastifyInstance) {
       }
     });
     socket.on('close', () => {
-      for (const [k,v] of candidates.entries()) if (v === socket) candidates.delete(k);
+      let disconnectedSessionId: string | null = null;
+      for (const [k,v] of candidates.entries()) {
+        if (v === socket) {
+          disconnectedSessionId = k;
+          candidates.delete(k);
+        }
+      }
       for (const [k,v] of ueClients.entries()) if (v === socket) ueClients.delete(k);
+
+      if (disconnectedSessionId) {
+        const sessionId = disconnectedSessionId;
+        // Wait 2 minutes before running auto-evaluation
+        setTimeout(async () => {
+          // If the candidate has reconnected in the meantime, do not auto-evaluate!
+          if (candidates.has(sessionId)) {
+            console.log(`Candidate reconnected for session ${sessionId}. Skipping auto-evaluation.`);
+            return;
+          }
+          
+          try {
+            const session = await prisma.interviewSession.findUnique({
+              where: { id: sessionId },
+            });
+            
+            // Only auto-evaluate if the session is still IN_PROGRESS (not COMPLETED or EVALUATED)
+            if (session && session.status === 'IN_PROGRESS') {
+              console.log(`Candidate session ${sessionId} disconnected for >2 mins. Triggering auto-evaluation...`);
+              
+              const { evaluateInterview } = await import('../services/evaluation.service.js');
+              await evaluateInterview(sessionId);
+              
+              // Trigger FastAPI webhook completion event
+              const webhookUrl = `http://localhost:8000/api/jobs/webhooks/interview-completed`;
+              const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Webhook-Secret': process.env.WEBHOOK_SECRET || 'super-secret-webhook-key',
+                },
+                body: JSON.stringify({ sessionId }),
+              });
+              console.log(`Auto-evaluation webhook response for session ${sessionId}:`, response.status);
+            }
+          } catch (err) {
+            console.error(`Error in auto-evaluation for session ${sessionId}:`, err);
+          }
+        }, 120000); // 2 minutes
+      }
     });
   });
 }

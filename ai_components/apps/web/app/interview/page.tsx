@@ -81,6 +81,12 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
           const data = await res.json();
           setScheduleData(data);
           
+          if (data.resolved_session_id && data.resolved_session_id !== sessionId) {
+            console.log(`Switching session ID from ${sessionId} to stage-specific ID ${data.resolved_session_id}`);
+            setSessionId(data.resolved_session_id);
+            return;
+          }
+          
           if (data.scheduled_at) {
             const scheduledTime = new Date(data.scheduled_at).getTime();
             const checkLock = () => {

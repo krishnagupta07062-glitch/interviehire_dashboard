@@ -15,6 +15,13 @@ def slugify(text: str) -> str:
     text = re.sub(r'[^a-z0-9]+', '-', text)
     return text.strip('-')
 
+def get_stage_session_id(applicant_id: Any, stage: str) -> str:
+    import uuid
+    if isinstance(applicant_id, str):
+        applicant_id = uuid.UUID(applicant_id)
+    stage_key = "screening" if "screening" in stage.lower() else "functional"
+    return str(uuid.uuid5(applicant_id, stage_key))
+
 def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[InterviewSession]:
     try:
         # Load relationships if not fully loaded
@@ -132,7 +139,8 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             db.commit()
 
         # 4. Sync InterviewSession — always reset to SCHEDULED so re-advances generate a fresh interview
-        session_id = str(applicant.id) # Use candidate ID as Session ID directly
+        is_screening_stage = (applicant.functional_status is None)
+        session_id = get_stage_session_id(applicant.id, "screening" if is_screening_stage else "functional")
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         
         # Determine scheduledAt based on active stage
@@ -308,8 +316,19 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
         return None
 
 def get_applicant_vetting(db: Session, applicant_id: str) -> Dict[str, Any]:
-    # Query InterviewSession
-    session = db.query(InterviewSession).filter(InterviewSession.id == applicant_id).first()
+    # Query InterviewSession using functional session ID
+    import uuid
+    try:
+        candidate_uuid = uuid.UUID(applicant_id)
+        functional_session_id = get_stage_session_id(candidate_uuid, "functional")
+    except Exception:
+        functional_session_id = applicant_id
+
+    session = db.query(InterviewSession).filter(InterviewSession.id == functional_session_id).first()
+    # Fallback to legacy applicant ID
+    if not session:
+        session = db.query(InterviewSession).filter(InterviewSession.id == applicant_id).first()
+
     if not session:
         # Return mock / default state
         return {
@@ -322,7 +341,7 @@ def get_applicant_vetting(db: Session, applicant_id: str) -> Dict[str, Any]:
         }
 
     # Query ProctoringLogs
-    logs = db.query(ProctoringLog).filter(ProctoringLog.sessionId == applicant_id).all()
+    logs = db.query(ProctoringLog).filter(ProctoringLog.sessionId == session.id).all()
     
     # Parse evaluation json
     eval_data = session.evaluation or {}
@@ -433,6 +452,11 @@ def get_applicant_screening_report(db: Session, applicant: Applicant) -> Dict[st
     job = db.query(Job).filter(Job.id == applicant.job_id).first()
     job_title = job.role_name or job.title if job else "N/A"
     
+    # Query InterviewSession for screening
+    import uuid
+    screening_session_id = get_stage_session_id(applicant.id, "screening")
+    session = db.query(InterviewSession).filter(InterviewSession.id == screening_session_id).first()
+    
     parameters = {}
     if job and job.screening_parameters:
         try:
@@ -456,7 +480,19 @@ def get_applicant_screening_report(db: Session, applicant: Applicant) -> Dict[st
         }
         
     checklist = []
-    score = applicant.screening_score or 80.0
+    
+    # If we have a completed session, get its details
+    eval_data = {}
+    if session and session.evaluation:
+        try:
+            if isinstance(session.evaluation, str):
+                eval_data = json.loads(session.evaluation)
+            else:
+                eval_data = session.evaluation
+        except Exception:
+            pass
+            
+    score = eval_data.get("overallScore") or applicant.screening_score or 80.0
     import random
     random.seed(str(applicant.id))
     
@@ -483,26 +519,61 @@ def get_applicant_screening_report(db: Session, applicant: Applicant) -> Dict[st
                     "reason": reason
                 })
                 
-    dialogue = [
-        {"speaker": "Recruiter", "text": "Hi, thanks for joining the screening call today. I wanted to verify a few details from your profile first."},
-        {"speaker": "Candidate", "text": "Hi! Absolutely, happy to walk you through my details."},
-        {"speaker": "Recruiter", "text": "Great. Could you confirm your current notice period and location?"},
-        {"speaker": "Candidate", "text": f"Yes, my notice period is 30 days, and I'm currently based in Pune. I'm open to hybrid or relocation if required."},
-        {"speaker": "Recruiter", "text": "Perfect. What are your CTC expectations?"},
-        {"speaker": "Candidate", "text": "I'm looking for around 12 LPA, but I'm flexible based on the overall role benefits."}
-    ]
-    
-    fit_level = applicant.recruiter_screening or ("Good fit" if score >= 75 else "Moderate fit" if score >= 50 else "Poor fit")
-    
+    # Parse dialogue from real transcript if it exists
+    dialogue = []
+    if session and session.transcript:
+        raw_transcript = session.transcript
+        if isinstance(raw_transcript, str):
+            try:
+                raw_transcript = json.loads(raw_transcript)
+            except Exception:
+                raw_transcript = []
+                
+        if isinstance(raw_transcript, list):
+            for entry in raw_transcript:
+                if isinstance(entry, dict):
+                    speaker = entry.get("speaker") or entry.get("type") or "Participant"
+                    text = entry.get("text") or ""
+                    # Map speaker names
+                    if speaker.lower() == 'ai':
+                        speaker = "Interviewer"
+                    elif speaker.lower() in ['candidate', 'user']:
+                        speaker = "Candidate"
+                        
+                    if text and speaker.lower() not in ['recording', 'proctoring']:
+                        dialogue.append({
+                            "speaker": speaker,
+                            "text": text
+                        })
+                        
+    if not dialogue:
+        dialogue = [
+            {"speaker": "Recruiter", "text": "Hi, thanks for joining the screening call today. I wanted to verify a few details from your profile first."},
+            {"speaker": "Candidate", "text": "Hi! Absolutely, happy to walk you through my details."},
+            {"speaker": "Recruiter", "text": "Great. Could you confirm your current notice period and location?"},
+            {"speaker": "Candidate", "text": f"Yes, my notice period is 30 days, and I'm currently based in Pune. I'm open to hybrid or relocation if required."},
+            {"speaker": "Recruiter", "text": "Perfect. What are your CTC expectations?"},
+            {"speaker": "Candidate", "text": "I'm looking for around 12 LPA, but I'm flexible based on the overall role benefits."}
+        ]
+        
+    fit_level = eval_data.get("recommendation") or applicant.recruiter_screening or ("Good fit" if score >= 75 else "Moderate fit" if score >= 50 else "Poor fit")
+    summary = eval_data.get("summary") or f"Candidate screened on {applicant.attempted_at.strftime('%B %d, %Y') if applicant.attempted_at else 'recently'}. Demonstrated high clarity of speech and alignment with key criteria. Confirmed notice period fits target pipeline."
+    status = applicant.screening_status.value if applicant.screening_status else "completed"
+    if session:
+        if session.status == SessionStatus.IN_PROGRESS:
+            status = "in_progress"
+        elif session.status == SessionStatus.SCHEDULED:
+            status = "scheduled"
+            
     return {
         "candidateName": applicant.name,
         "email": applicant.email,
         "phone": applicant.phone or "—",
         "jobTitle": job_title,
         "score": score,
-        "status": applicant.screening_status.value if applicant.screening_status else "completed",
+        "status": status,
         "fitLevel": fit_level,
-        "summary": f"Candidate screened on {applicant.attempted_at.strftime('%B %d, %Y') if applicant.attempted_at else 'recently'}. Demonstrated high clarity of speech and alignment with key criteria. Confirmed notice period fits target pipeline.",
+        "summary": summary,
         "checklist": checklist,
         "dialogue": dialogue,
         "attemptedAt": applicant.attempted_at.isoformat() if applicant.attempted_at else None

@@ -14,10 +14,14 @@ import { registerWebsocket } from './websocket/gateway.js';
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(serverDirectory, '../../../.env') });
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: true, bodyLimit: 100 * 1024 * 1024 });
 await app.register(cors, { origin: true, credentials: true });
 await app.register(rateLimit, { max: 200, timeWindow: '1 minute' });
-await app.register(multipart);
+await app.register(multipart, {
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB
+  },
+});
 await app.register(websocket);
 app.get('/health', async () => ({ ok: true, service: 'interviehire-api' }));
 await app.register(companyRoutes, { prefix: '/api/company' });

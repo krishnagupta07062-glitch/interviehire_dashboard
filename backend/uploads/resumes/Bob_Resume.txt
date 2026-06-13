@@ -1,0 +1,8 @@
+
+Bob E2E Resume Sourced
+Email: bob_resume@example.com
+Phone: +1 415-555-9988
+Summary: Experienced Test Automation Engineer with strong python background.
+Experience:
+- 2 Years at TechCorp writing requests testing scripts.
+- FastAPI backend integration testing.

@@ -3568,7 +3568,7 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
 // JOB DETAIL VIEW
 // ==========================================
 
-function navigateToJobDetail(jobId) {
+function navigateToJobDetail(jobId, defaultSubTab = 'overview') {
   const job = AppState.jobs.find(j => j.id === jobId);
   if (!job) return;
 
@@ -3611,11 +3611,13 @@ function navigateToJobDetail(jobId) {
   document.getElementById('jd-count-screening').textContent = job.pipeline.screening;
   document.getElementById('jd-count-functional').textContent = job.pipeline.functional;
 
-  // Reset to Overview tab
+  // Reset to defaultSubTab tab
   document.querySelectorAll('.jd-tab').forEach(t => t.classList.remove('active'));
-  document.querySelector('.jd-tab[data-jd-tab="overview"]').classList.add('active');
+  const targetTab = document.querySelector(`.jd-tab[data-jd-tab="${defaultSubTab}"]`);
+  if (targetTab) targetTab.classList.add('active');
   document.querySelectorAll('.jd-pane').forEach(p => p.classList.remove('active'));
-  document.getElementById('jd-pane-overview').classList.add('active');
+  const targetPane = document.getElementById(`jd-pane-${defaultSubTab}`);
+  if (targetPane) targetPane.classList.add('active');
 
   const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
     c => c.jobApplied === job.roleName || c.jobApplied === job.cardName
@@ -5513,7 +5515,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // API calls use relative paths — Next.js proxies /api/* → http://127.0.0.1:8000/api/*
   let API_BASE = '';
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    API_BASE = `http://${window.location.hostname}:8000`;
+    API_BASE = 'http://127.0.0.1:8000';
   }
 
   async function initAuth() {
@@ -7067,7 +7069,10 @@ function initSourcing() {
   const addApplicantsBtn = document.querySelector('.btn-jd-primary');
   if (addApplicantsBtn) {
     addApplicantsBtn.addEventListener('click', () => {
-      navigateToSourcing(AppState.activeJobId);
+      const activeJdTab = document.querySelector('.jd-tab.active');
+      const activeTabId = activeJdTab ? activeJdTab.getAttribute('data-jd-tab') : 'overview';
+      const defaultMode = activeTabId === 'resume' ? 'analyse' : 'schedule';
+      navigateToSourcing(AppState.activeJobId, defaultMode);
     });
   }
 
@@ -7426,7 +7431,7 @@ function initSourcing() {
   }
 }
 
-function navigateToSourcing(jobId) {
+function navigateToSourcing(jobId, defaultMode = 'schedule') {
   const job = AppState.jobs.find(j => j.id === jobId);
   if (!job) return;
 
@@ -7471,7 +7476,7 @@ function navigateToSourcing(jobId) {
   if (fileRes) fileRes.value = '';
 
   // Default mode & tab
-  switchSourcingMode('schedule');
+  switchSourcingMode(defaultMode);
 
   setTimeout(updateAllSlidingPills, 50);
   soundEngine.playChime([329.63, 392.00, 523.25], 0.15, 0.08);
@@ -7664,8 +7669,12 @@ async function importCsvCandidates() {
       if (fileCsv) fileCsv.value = '';
 
       // Reload from backend and navigate
-      await loadStateFromBackend();
-      navigateToJobDetail(AppState.activeJobId);
+      try {
+        await loadStateFromBackend();
+      } catch (err) {
+        console.error("Failed to reload state after CSV import:", err);
+      }
+      navigateToJobDetail(AppState.activeJobId, currentSourcingMode === 'schedule' ? 'screening' : 'resume');
     } else {
       throw new Error("Failed to import candidates");
     }
@@ -7809,8 +7818,12 @@ async function importResumesCandidates() {
       if (fileRes) fileRes.value = '';
 
       // Reload from backend and navigate
-      await loadStateFromBackend();
-      navigateToJobDetail(AppState.activeJobId);
+      try {
+        await loadStateFromBackend();
+      } catch (err) {
+        console.error("Failed to reload state after resume upload:", err);
+      }
+      navigateToJobDetail(AppState.activeJobId, 'resume');
     } else {
       throw new Error("Failed to upload resumes");
     }
@@ -7950,7 +7963,11 @@ async function importManualQueue() {
       showPremiumToast(`Successfully imported ${successCount} candidate(s) into "${activeJob.roleName}".`, 'success');
       sourcingQueue = [];
       renderManualQueue();
-      await loadStateFromBackend();
+      try {
+        await loadStateFromBackend();
+      } catch (err) {
+        console.error("Failed to reload state after manual import:", err);
+      }
     } else {
       throw new Error('No candidates were imported successfully');
     }
@@ -7965,7 +7982,7 @@ async function importManualQueue() {
     }
   }
 
-  navigateToJobDetail(AppState.activeJobId);
+  navigateToJobDetail(AppState.activeJobId, currentSourcingMode === 'schedule' ? 'screening' : 'resume');
 }
 
 // === Shared Candidate Insertion helper ===
@@ -9838,7 +9855,7 @@ async function apiFetch(url, options = {}) {
   let targetUrl = url;
   if (url.startsWith('/api/')) {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      targetUrl = `http://${window.location.hostname}:8000${url}`;
+      targetUrl = `http://127.0.0.1:8000${url}`;
     }
   }
   // Always include credentials so the auth cookie is sent with every request
@@ -10232,7 +10249,7 @@ function connectWebSocket() {
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   let wsHost = window.location.host;
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    wsHost = `${window.location.hostname}:8000`;
+    wsHost = '127.0.0.1:8000';
   } else {
     const cloudPortMatch = window.location.hostname.match(/^(\d+)-/);
     if (cloudPortMatch) {
@@ -10285,7 +10302,7 @@ async function callDeepSeekAPI(messages, jsonMode = false) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 35000);
 
-  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? `http://${window.location.hostname}:8000` : '';
+  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : '';
 
   try {
     const response = await fetch(`${baseUrl}/api/deepseek`, {
