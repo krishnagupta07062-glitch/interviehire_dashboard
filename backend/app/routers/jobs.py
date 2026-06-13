@@ -76,7 +76,8 @@ def _build_job_out(job: Job, db: Session) -> dict:
         ),
         "resume_parameters": json.loads(job.resume_parameters) if job.resume_parameters else None,
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
-        "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None
+        "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
+        "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None
     }
 
 
@@ -140,7 +141,13 @@ def create_job(
         description=data.description,
         resume_parameters=json.dumps(data.resume_parameters) if data.resume_parameters else None,
         screening_parameters=json.dumps(data.screening_parameters) if data.screening_parameters else None,
-        functional_parameters=json.dumps(data.functional_parameters) if data.functional_parameters else None
+        functional_parameters=json.dumps(data.functional_parameters) if data.functional_parameters else None,
+        screening_questions=json.dumps(data.screening_questions) if data.screening_questions else json.dumps([
+            "Tell me about your professional background and key areas of expertise.",
+            "Why are you interested in this position and why do you want to join our organization?",
+            "What are your salary expectations, notice period, and preferred work arrangements?",
+            "Describe a challenging situation in your previous job and how you resolved it."
+        ])
     )
     db.add(new_job)
     db.commit()
@@ -1262,6 +1269,7 @@ def _build_job_detail_out(job: Job) -> dict:
         "resume_parameters": json.loads(job.resume_parameters) if job.resume_parameters else None,
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
+        "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
         "tags": tags
     }
 
@@ -1287,6 +1295,9 @@ def update_job_settings(
     job = _verify_job_access(job_id, current_user, active_org_id, db)
     for key, value in data.model_dump(exclude_unset=True).items():
         if key == "tags" and value is not None:
+            import json
+            setattr(job, key, json.dumps(value))
+        elif key == "screening_questions" and value is not None:
             import json
             setattr(job, key, json.dumps(value))
         else:
@@ -1328,6 +1339,8 @@ def update_job_parameters(
         job.screening_parameters = json.dumps(data.screening_parameters)
     if data.functional_parameters is not None:
         job.functional_parameters = json.dumps(data.functional_parameters)
+    if data.screening_questions is not None:
+        job.screening_questions = json.dumps(data.screening_questions)
     db.commit()
     db.refresh(job)
     return _build_job_detail_out(job)
@@ -1668,134 +1681,9 @@ def update_applicant(
     # 1. Always regenerate a fresh token on every advance so a new interview link is generated
     if (has_screening_update and applicant.screening_status) or (has_functional_update and applicant.functional_status):
         import uuid
-        from datetime import datetime, timedelta
         applicant.scheduling_token = str(uuid.uuid4())  # always fresh — allows re-testing
         db.commit()
         db.refresh(applicant)
-
-        job = db.query(Job).filter(Job.id == applicant.job_id).first()
-        job_title = job.role_name or job.title if job else "General Position"
-        stage_name = "Recruiter Screening" if (has_screening_update and applicant.screening_status) else "Functional Interview"
-
-        proposed_time = None
-        if stage_name == "Recruiter Screening":
-            if not applicant.screening_scheduled_at:
-                # Default timer to 1 PM next day
-                now = datetime.utcnow()
-                applicant.screening_scheduled_at = (now + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
-                db.commit()
-            proposed_time = applicant.screening_scheduled_at
-        else:
-            if not applicant.functional_scheduled_at:
-                # Default timer to 1 PM next day
-                now = datetime.utcnow()
-                applicant.functional_scheduled_at = (now + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
-                db.commit()
-            proposed_time = applicant.functional_scheduled_at
-
-        confirm_link = f"http://localhost:8000/api/public/confirm/{applicant.scheduling_token}"
-        reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-        try:
-            from app.utils.email_sender import send_stage_invitation_email
-            send_stage_invitation_email(
-                candidate_name=applicant.name,
-                candidate_email=applicant.email,
-                job_title=job_title,
-                stage_name=stage_name,
-                proposed_time=proposed_time,
-                confirm_link=confirm_link,
-                reschedule_link=reschedule_link
-            )
-        except Exception as mail_err:
-            logger.error(f"Failed to send stage invitation email: {mail_err}")
-
-    # 2. Google Calendar Event and confirmation email when scheduled
-    is_scheduled = False
-    target_time = None
-    stage_name = ""
-    
-    screening_val = getattr(applicant.screening_status, "value", applicant.screening_status) if applicant.screening_status else None
-    functional_val = getattr(applicant.functional_status, "value", applicant.functional_status) if applicant.functional_status else None
-
-    if has_functional_update and functional_val == "scheduled":
-        is_scheduled = True
-        target_time = applicant.functional_scheduled_at or applicant.attempted_at
-        stage_name = "Functional Interview"
-    elif has_screening_update and screening_val == "scheduled":
-        is_scheduled = True
-        target_time = applicant.screening_scheduled_at or applicant.attempted_at
-        stage_name = "Recruiter Screening"
-
-    if is_scheduled and target_time:
-        job = db.query(Job).filter(Job.id == applicant.job_id).first()
-        job_title = job.role_name or job.title if job else "General Position"
-        recruiter_id = job.created_by_id if job else None
-        
-        # Resolve organizer name and email from Organisation
-        from app.models.organisation import Organisation
-        organizer_name = "IntervieHire Host"
-        organizer_email = settings.SMTP_FROM or "hr@interviehire.com"
-        if job and job.organisation_id:
-            org = db.query(Organisation).filter(Organisation.id == job.organisation_id).first()
-            if org:
-                if org.org_name:
-                    organizer_name = org.org_name
-                if org.contact_email:
-                    organizer_email = org.contact_email
-                
-        summary = f"{stage_name} - {applicant.name}"
-        desc = f"Interview scheduled for the {job_title} role at IntervieHire."
-
-        try:
-            from app.utils.google_calendar import create_calendar_event, update_calendar_event
-            if not applicant.calendar_event_id:
-                # First time scheduling, sequence = 0
-                applicant.calendar_sequence = 0
-                event_id = create_calendar_event(
-                    summary=summary,
-                    description=desc,
-                    candidate_email=applicant.email,
-                    start_time=target_time,
-                    recruiter_id=recruiter_id,
-                    db=db
-                )
-                applicant.calendar_event_id = event_id
-                db.commit()
-                db.refresh(applicant)
-            else:
-                applicant.calendar_sequence = (applicant.calendar_sequence or 0) + 1
-                update_calendar_event(
-                    applicant.calendar_event_id, 
-                    target_time,
-                    recruiter_id=recruiter_id,
-                    db=db
-                )
-                db.commit()
-        except Exception as cal_err:
-            logger.error(f"Failed to update Google Calendar event: {cal_err}")
-
-        try:
-            from app.utils.email_sender import send_ical_invitation_email
-            reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-            interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
-            uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
-            
-            send_ical_invitation_email(
-                candidate_name=applicant.name,
-                candidate_email=applicant.email,
-                job_title=job_title,
-                stage_name=stage_name,
-                start_time=target_time,
-                duration_minutes=30,
-                uid=uid,
-                sequence=applicant.calendar_sequence or 0,
-                organizer_email=organizer_email,
-                reschedule_link=reschedule_link,
-                interview_link=interview_link,
-                organizer_name=organizer_name
-            )
-        except Exception as mail_err:
-            logger.error(f"Failed to send confirmation email: {mail_err}")
 
     # Sync to AI for both screening and functional advances so interview session is always fresh
     if (has_screening_update and applicant.screening_status) or (has_functional_update and applicant.functional_status):
@@ -1808,6 +1696,140 @@ def update_applicant(
     message = OutgoingMessage(
         type="candidate_update",
         content=f"Candidate {applicant.name} updated for {role_name}",
+        sender="System"
+    ).model_dump_json()
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(manager.broadcast(message, room_id="global"))
+    except RuntimeError:
+        pass
+
+    return applicant
+
+
+@router.post("/applicants/{applicant_id}/schedule", response_model=ApplicantOut)
+def schedule_interview(
+    applicant_id: UUID,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    """Schedule an interview for a candidate and send calendar invite + interview link."""
+    import uuid as uuid_lib
+    from datetime import datetime
+    from app.utils.email_sender import send_ical_invitation_email
+
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    stage = data.get("stage", "functional")  # 'screening' or 'functional'
+    scheduled_at_raw = data.get("scheduled_at")
+
+    if not scheduled_at_raw:
+        raise HTTPException(status_code=400, detail="scheduled_at is required")
+
+    # Parse ISO datetime string
+    try:
+        if isinstance(scheduled_at_raw, str):
+            scheduled_at = datetime.fromisoformat(scheduled_at_raw.replace("Z", "+00:00"))
+        else:
+            scheduled_at = scheduled_at_raw
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid scheduled_at format")
+
+    # Always generate a fresh token
+    applicant.scheduling_token = str(uuid_lib.uuid4())
+
+    if stage == "screening":
+        applicant.screening_scheduled_at = scheduled_at
+        applicant.screening_status = InterviewStatus.scheduled
+        stage_name = "Recruiter Screening"
+    else:
+        applicant.functional_scheduled_at = scheduled_at
+        applicant.functional_status = InterviewStatus.scheduled
+        stage_name = "Functional Interview"
+
+    db.commit()
+    db.refresh(applicant)
+
+    job = db.query(Job).filter(Job.id == applicant.job_id).first()
+    job_title = job.role_name or job.title if job else "General Position"
+    recruiter_id = job.created_by_id if job else None
+
+    # Resolve organizer from Organisation
+    from app.models.organisation import Organisation
+    organizer_name = "IntervieHire Host"
+    organizer_email = settings.SMTP_FROM or "hr@interviehire.com"
+    if job and job.organisation_id:
+        org = db.query(Organisation).filter(Organisation.id == job.organisation_id).first()
+        if org:
+            if org.org_name:
+                organizer_name = org.org_name
+            if org.contact_email:
+                organizer_email = org.contact_email
+
+    # Create/update Google Calendar event
+    try:
+        from app.utils.google_calendar import create_calendar_event, update_calendar_event
+        summary = f"{stage_name} - {applicant.name}"
+        desc = f"Interview scheduled for the {job_title} role at IntervieHire."
+        if not applicant.calendar_event_id:
+            applicant.calendar_sequence = 0
+            event_id = create_calendar_event(
+                summary=summary,
+                description=desc,
+                candidate_email=applicant.email,
+                start_time=scheduled_at,
+                recruiter_id=recruiter_id,
+                db=db
+            )
+            applicant.calendar_event_id = event_id
+        else:
+            applicant.calendar_sequence = (applicant.calendar_sequence or 0) + 1
+            update_calendar_event(
+                applicant.calendar_event_id,
+                scheduled_at,
+                recruiter_id=recruiter_id,
+                db=db
+            )
+        db.commit()
+        db.refresh(applicant)
+    except Exception as cal_err:
+        logger.error(f"Failed to update Google Calendar event: {cal_err}")
+
+    # Send confirmation email with calendar invite and interview link
+    try:
+        reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
+        interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+        uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
+        send_ical_invitation_email(
+            candidate_name=applicant.name,
+            candidate_email=applicant.email,
+            job_title=job_title,
+            stage_name=stage_name,
+            start_time=scheduled_at,
+            duration_minutes=30,
+            uid=uid,
+            sequence=applicant.calendar_sequence or 0,
+            organizer_email=organizer_email,
+            reschedule_link=reschedule_link,
+            interview_link=interview_link,
+            organizer_name=organizer_name
+        )
+    except Exception as mail_err:
+        logger.error(f"Failed to send interview confirmation email: {mail_err}")
+
+    # Sync to AI backend
+    try:
+        from app.utils.ai_sync import sync_applicant_to_ai
+        sync_applicant_to_ai(db, applicant)
+    except Exception as sync_err:
+        logger.error(f"Failed to sync to AI: {sync_err}")
+
+    # Broadcast WebSocket update
+    message = OutgoingMessage(
+        type="candidate_update",
+        content=f"Candidate {applicant.name} scheduled for {stage_name}",
         sender="System"
     ).model_dump_json()
     import asyncio

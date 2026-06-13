@@ -17,6 +17,7 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS resume_parameters TEXT;"))
     conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_parameters TEXT;"))
     conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS functional_parameters TEXT;"))
+    conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS recruiter_screening VARCHAR;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS recruiter_screening_score FLOAT;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMP;"))
@@ -32,6 +33,7 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS overall_interview_score FLOAT;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS proctoring_severity_flag VARCHAR;"))
     conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_sequence INTEGER DEFAULT 0;"))
+    conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
     conn.commit()
 
     # Add 'super_admin' to usertype enum in postgresql

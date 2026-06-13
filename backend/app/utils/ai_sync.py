@@ -134,6 +134,14 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
         # 4. Sync InterviewSession — always reset to SCHEDULED so re-advances generate a fresh interview
         session_id = str(applicant.id) # Use candidate ID as Session ID directly
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+        
+        # Determine scheduledAt based on active stage
+        scheduled_at = None
+        if applicant.functional_status is not None:
+            scheduled_at = applicant.functional_scheduled_at
+        elif applicant.screening_status is not None:
+            scheduled_at = applicant.screening_scheduled_at
+
         if not session:
             session = InterviewSession(
                 id=session_id,
@@ -142,7 +150,8 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
                 jobRoleId=role_id,
                 status=SessionStatus.SCHEDULED,
                 avatarProvider="ue5_pixel_streaming",
-                transcript=[]
+                transcript=[],
+                scheduledAt=scheduled_at
             )
             db.add(session)
             db.commit()
@@ -157,77 +166,140 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             session.completedAt = None
             session.websocketId = None
             session.ueSocketId = None
+            session.scheduledAt = scheduled_at
             db.commit()
             db.refresh(session)
-        # 5. Sync Questions from functional_parameters
-        if job.functional_parameters:
+
+        # 5. Sync Questions based on current stage (screening or functional)
+        is_screening_stage = (applicant.functional_status is None)
+        active_question_ids = []
+
+        if is_screening_stage:
             try:
-                params = json.loads(job.functional_parameters) if isinstance(job.functional_parameters, str) else job.functional_parameters
-                if isinstance(params, dict):
-                    topics = params.get("topics", [])
-                    active_question_ids = []
+                # Load screening questions
+                s_questions = []
+                if job.screening_questions:
+                    try:
+                        s_questions = json.loads(job.screening_questions)
+                    except Exception:
+                        pass
+                if not s_questions:
+                    s_questions = [
+                        "Tell me about your professional background and key areas of expertise.",
+                        "Why are you interested in this position and why do you want to join our organization?",
+                        "What are your salary expectations, notice period, and preferred work arrangements?",
+                        "Describe a challenging situation in your previous job and how you resolved it."
+                    ]
+                
+                for q_text in s_questions:
+                    q_text = str(q_text).strip()
+                    if not q_text:
+                        continue
                     
-                    for topic in topics:
-                        topic_name = topic.get("name", "General")
-                        topic_difficulty = str(topic.get("difficulty", "MEDIUM")).upper()
-                        if topic_difficulty not in ["EASY", "MEDIUM", "HARD"]:
-                            topic_difficulty = "MEDIUM"
-                            
-                        questions_list = topic.get("questions", [])
-                        for q_text in questions_list:
-                            q_text = str(q_text).strip()
-                            if not q_text:
-                                continue
-                            
-                            # Find existing question
-                            existing_q = db.query(Question).filter(
-                                Question.companyId == company_id,
-                                Question.jobRoleId == role_id,
-                                Question.text == q_text
-                            ).first()
-                            
-                            if existing_q:
-                                existing_q.isActive = True
-                                existing_q.difficulty = Difficulty[topic_difficulty]
-                                existing_q.topicCategories = [topic_name]
-                                active_question_ids.append(existing_q.id)
-                            else:
-                                import uuid
-                                new_q = Question(
-                                    id=f"q-{uuid.uuid4()}",
-                                    companyId=company_id,
-                                    jobRoleId=role_id,
-                                    text=q_text,
-                                    roleApplicability=[RoleType.GENERAL],
-                                    difficulty=Difficulty[topic_difficulty],
-                                    topicCategories=[topic_name],
-                                    estimatedMinutes=4,
-                                    aiEvaluationGuidance=f"Evaluate response for topic: {topic_name}",
-                                    effectivenessRating=0.0,
-                                    version=1,
-                                    isActive=True
-                                )
-                                db.add(new_q)
-                                db.flush()
-                                active_question_ids.append(new_q.id)
-                                
-                    # Deactivate questions for this role that are not in the current active list
-                    if active_question_ids:
-                        db.query(Question).filter(
-                            Question.companyId == company_id,
-                            Question.jobRoleId == role_id,
-                            ~Question.id.in_(active_question_ids)
-                        ).update({Question.isActive: False}, synchronize_session=False)
+                    # Find existing question
+                    existing_q = db.query(Question).filter(
+                        Question.companyId == company_id,
+                        Question.jobRoleId == role_id,
+                        Question.text == q_text
+                    ).first()
+                    
+                    if existing_q:
+                        existing_q.isActive = True
+                        existing_q.difficulty = Difficulty.EASY
+                        existing_q.topicCategories = ["Screening"]
+                        active_question_ids.append(existing_q.id)
                     else:
-                        db.query(Question).filter(
-                            Question.companyId == company_id,
-                            Question.jobRoleId == role_id
-                        ).update({Question.isActive: False}, synchronize_session=False)
-                    
-                    db.commit()
-            except Exception as q_sync_err:
-                logger.error(f"Error syncing questions: {q_sync_err}")
-                db.rollback()
+                        import uuid
+                        new_q = Question(
+                            id=f"q-{uuid.uuid4()}",
+                            companyId=company_id,
+                            jobRoleId=role_id,
+                            text=q_text,
+                            roleApplicability=[RoleType.GENERAL],
+                            difficulty=Difficulty.EASY,
+                            topicCategories=["Screening"],
+                            estimatedMinutes=3,
+                            aiEvaluationGuidance="Evaluate response for alignment with role and basic qualifications.",
+                            effectivenessRating=0.0,
+                            version=1,
+                            isActive=True
+                        )
+                        db.add(new_q)
+                        db.flush()
+                        active_question_ids.append(new_q.id)
+            except Exception as e:
+                logger.error(f"Error syncing screening questions: {e}")
+        else:
+            # Sync functional questions
+            if job.functional_parameters:
+                try:
+                    params = json.loads(job.functional_parameters) if isinstance(job.functional_parameters, str) else job.functional_parameters
+                    if isinstance(params, dict):
+                        topics = params.get("topics", [])
+                        
+                        for topic in topics:
+                            topic_name = topic.get("name", "General")
+                            topic_difficulty = str(topic.get("difficulty", "MEDIUM")).upper()
+                            if topic_difficulty not in ["EASY", "MEDIUM", "HARD"]:
+                                topic_difficulty = "MEDIUM"
+                                
+                            questions_list = topic.get("questions", [])
+                            for q_text in questions_list:
+                                q_text = str(q_text).strip()
+                                if not q_text:
+                                    continue
+                                
+                                # Find existing question
+                                existing_q = db.query(Question).filter(
+                                    Question.companyId == company_id,
+                                    Question.jobRoleId == role_id,
+                                    Question.text == q_text
+                                ).first()
+                                
+                                if existing_q:
+                                    existing_q.isActive = True
+                                    existing_q.difficulty = Difficulty[topic_difficulty]
+                                    existing_q.topicCategories = [topic_name]
+                                    active_question_ids.append(existing_q.id)
+                                else:
+                                    import uuid
+                                    new_q = Question(
+                                        id=f"q-{uuid.uuid4()}",
+                                        companyId=company_id,
+                                        jobRoleId=role_id,
+                                        text=q_text,
+                                        roleApplicability=[RoleType.GENERAL],
+                                        difficulty=Difficulty[topic_difficulty],
+                                        topicCategories=[topic_name],
+                                        estimatedMinutes=4,
+                                        aiEvaluationGuidance=f"Evaluate response for topic: {topic_name}",
+                                        effectivenessRating=0.0,
+                                        version=1,
+                                        isActive=True
+                                    )
+                                    db.add(new_q)
+                                    db.flush()
+                                    active_question_ids.append(new_q.id)
+                except Exception as q_sync_err:
+                    logger.error(f"Error syncing questions: {q_sync_err}")
+
+        # Deactivate questions for this role that are not in the current active list
+        try:
+            if active_question_ids:
+                db.query(Question).filter(
+                    Question.companyId == company_id,
+                    Question.jobRoleId == role_id,
+                    ~Question.id.in_(active_question_ids)
+                ).update({Question.isActive: False}, synchronize_session=False)
+            else:
+                db.query(Question).filter(
+                    Question.companyId == company_id,
+                    Question.jobRoleId == role_id
+                ).update({Question.isActive: False}, synchronize_session=False)
+            db.commit()
+        except Exception as deactivate_err:
+            logger.error(f"Error deactivating questions: {deactivate_err}")
+            db.rollback()
             
         return session
     except Exception as e:

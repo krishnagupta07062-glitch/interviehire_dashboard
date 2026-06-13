@@ -107,6 +107,7 @@ class JobOut(BaseModel):
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
+    screening_questions: Optional[List[str]] = None
     tags: Optional[List[str]] = None
 
     class Config:
@@ -137,6 +138,7 @@ class JobDetailOut(BaseModel):
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
+    screening_questions: Optional[List[str]] = None
     tags: Optional[List[str]] = None
  
     class Config:
@@ -154,6 +156,7 @@ class JobSettingsIn(BaseModel):
     custom_job_id: Optional[str] = None
     tags: Optional[List[str]] = None
     status: Optional[JobStatus] = None
+    screening_questions: Optional[List[str]] = None
     job_type: Optional[str] = None
     location: Optional[str] = None
  
@@ -170,11 +173,13 @@ class JobCreateIn(BaseModel):
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
+    screening_questions: Optional[List[str]] = None
 
 class JobParametersIn(BaseModel):
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
+    screening_questions: Optional[List[str]] = None
 
 
 # ─── APPLICANTS / RESPONSES ──────────────────────────────────────────────────

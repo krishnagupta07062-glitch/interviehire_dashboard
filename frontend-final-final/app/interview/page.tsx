@@ -40,6 +40,20 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
  export default function Interview(){
   const [sessionId,setSessionId]=useState('demo-session');
   const [mounted, setMounted] = useState(false);
+  const [scheduleData, setScheduleData] = useState<{
+    candidate_name: string;
+    email: string;
+    job_title: string;
+    stage: string;
+    scheduled_at: string | null;
+  } | null>(null);
+  const [isLocked, setIsLocked] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+  } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -55,7 +69,44 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
     }
   }, []);
 
-
+  useEffect(() => {
+    if (!sessionId || sessionId === 'demo-session') return;
+    
+    async function fetchSchedule() {
+      try {
+        const res = await fetch(`/api/public/interview-session/${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setScheduleData(data);
+          
+          if (data.scheduled_at) {
+            const scheduledTime = new Date(data.scheduled_at).getTime();
+            const checkLock = () => {
+              const now = Date.now();
+              const diff = scheduledTime - now;
+              if (diff > 0) {
+                setIsLocked(true);
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+                setTimeLeft({ days, hours, minutes, seconds });
+              } else {
+                setIsLocked(false);
+                setTimeLeft(null);
+              }
+            };
+            checkLock();
+            const timer = setInterval(checkLock, 1000);
+            return () => clearInterval(timer);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch scheduling details:", e);
+      }
+    }
+    fetchSchedule();
+  }, [sessionId]);
 
   const [calibration, setCalibration] = useState<CalibrationResult | null>(null);
   const [socket,setSocket]=useState<WebSocket|null>(null);
@@ -460,6 +511,65 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
     );
   }
 
+  if (isLocked && timeLeft) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-[#0b0f19] via-[#0d1222] to-[#05070e] p-6 font-sans text-slate-100 flex flex-col items-center justify-center relative overflow-hidden">
+        {/* Glow Effects */}
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full bg-cyan-500/10 blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-amber-500/5 blur-[100px] pointer-events-none" />
+
+        <div className="w-full max-w-2xl text-center relative z-10">
+          <div className="mb-6 flex flex-col items-center">
+            <span className="text-xs uppercase tracking-[0.4em] text-[#d4af37] font-semibold">IntervieHire</span>
+            <div className="h-[2px] w-12 bg-gradient-to-r from-transparent via-[#d4af37] to-transparent mt-2" />
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-slate-900/40 backdrop-blur-xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+            <div className="mb-8">
+              <span className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 border border-amber-500/20 px-4 py-1.5 text-xs font-semibold text-amber-300 uppercase tracking-wider animate-pulse">
+                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                Interview Room Locked
+              </span>
+              
+              <h1 className="mt-6 text-3xl font-extrabold text-white tracking-tight">
+                {scheduleData?.job_title || "General Position"}
+              </h1>
+              <p className="mt-2 text-[#d4af37] font-medium tracking-wide">
+                {scheduleData?.stage || "Interview Session"}
+              </p>
+              <p className="mt-4 text-sm text-slate-400 max-w-md mx-auto">
+                Hello, <span className="text-white font-semibold">{scheduleData?.candidate_name || "Candidate"}</span>. Your interview has been scheduled. The room will unlock automatically when the interview begins.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-4 max-w-md mx-auto mb-8">
+              {[
+                { label: 'Days', value: timeLeft.days },
+                { label: 'Hours', value: timeLeft.hours },
+                { label: 'Minutes', value: timeLeft.minutes },
+                { label: 'Seconds', value: timeLeft.seconds }
+              ].map(({ label, value }) => (
+                <div key={label} className="flex flex-col items-center p-4 rounded-2xl bg-white/5 border border-white/5 shadow-inner">
+                  <span className="text-3xl font-black text-white tracking-tight tabular-nums">
+                    {String(value).padStart(2, '0')}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mt-1">
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-xs text-slate-500 border-t border-white/5 pt-6 flex items-center justify-center gap-2">
+              <Timer size={14} className="text-[#d4af37]" />
+              <span>Scheduled for: <span className="text-slate-300 font-medium">{scheduleData?.scheduled_at ? new Date(scheduleData.scheduled_at).toLocaleString() : 'N/A'}</span></span>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
    return (
     <main className="min-h-screen bg-gradient-to-br from-[#0b0f19] via-[#0d1222] to-[#05070e] p-6 font-sans text-slate-100">
       {!calibration && !permissionsReadyForCalibration && (
@@ -525,7 +635,7 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
         <section className="rounded-3xl border border-white/10 bg-slate-900/40 backdrop-blur-md p-6 shadow-2xl">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-wider text-[#d4af37]">Candidate Vetting Portal</p>
+              <p className="text-xs uppercase tracking-wider text-[#d4af37]">{scheduleData?.stage || 'Candidate Vetting Portal'}</p>
               <h1 className="text-2xl font-black text-white">{sessionData?.jobRole?.title || 'Functional Technical Interview'}</h1>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">

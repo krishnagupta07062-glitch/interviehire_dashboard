@@ -126,6 +126,32 @@ def get_public_schedule_info(token: str, db: Session = Depends(get_db)):
         "scheduled_at": scheduled_at.isoformat() if scheduled_at else None
     }
 
+@router.get("/interview-session/{session_id}")
+def get_public_interview_session_info(session_id: UUID, db: Session = Depends(get_db)):
+    applicant = db.query(Applicant).filter(Applicant.id == session_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Session not found.")
+        
+    job = db.query(Job).filter(Job.id == applicant.job_id).first()
+    job_title = job.role_name or job.title if job else "General Position"
+    
+    stage = "Resume"
+    scheduled_at = None
+    if applicant.functional_status is not None:
+        stage = "Functional Interview"
+        scheduled_at = applicant.functional_scheduled_at
+    elif applicant.screening_status is not None:
+        stage = "Recruiter Screening"
+        scheduled_at = applicant.screening_scheduled_at
+        
+    return {
+        "candidate_name": applicant.name,
+        "email": applicant.email,
+        "job_title": job_title,
+        "stage": stage,
+        "scheduled_at": scheduled_at.isoformat() if scheduled_at else None
+    }
+
 @router.get("/confirm/{token}", response_class=HTMLResponse)
 def confirm_interview_slot(token: str, db: Session = Depends(get_db)):
     applicant = db.query(Applicant).filter(Applicant.scheduling_token == token).first()

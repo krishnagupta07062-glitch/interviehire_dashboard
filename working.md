@@ -105,7 +105,13 @@ This file tracks all modifications made to the codebase in response to user requ
   2. **InterviewSession Reset on Re-Advance** ([ai_sync.py](file:///c:/Users/KRISHNA GUPTA/Desktop/interviehire/backend/app/utils/ai_sync.py)): When `sync_applicant_to_ai` encounters an existing `InterviewSession`, it now resets it to `SCHEDULED` status and clears `transcript`, `evaluation`, `reportUrl`, `startedAt`, `completedAt`, `websocketId`, and `ueSocketId`. This allows the Fastify AI server to accept the candidate as a fresh interviewee.
   3. **Sync on Both Stages** ([jobs.py](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/backend/app/routers/jobs.py)): Extended the `sync_applicant_to_ai` call to trigger on both `screening_status` and `functional_status` advances (previously only functional). This ensures even a Resume → Screening advance creates a clean session.
 
-
-
-
-
+## Prompt 11: Fixed Screening Questions, Functional Stage Scheduling, Database Connection Resiliency & Rendering Fixes
+- **Date**: 2026-06-13
+- **Goal**: Align the recruiter screening and functional interview pipeline according to corrected requirements, resolve UI gaps, database pooling resiliency, and restore functional interview pane rendering.
+- **Changes Made**:
+  1. **Fixed Screening Questions**: Created a dedicated "Fixed Recruiter Screening Questions" panel below the applicants table in the Recruiter Screening stage pane. Recruiting organizations can now view, add, remove, and edit screening questions directly from the dashboard, saving edits directly to `job.screening_questions` in PostgreSQL.
+  2. **Dynamic Status & Scheduling for Functional Stage**: Refactored the Functional Interview candidate table to use the dynamic `statusIcon` function and render the appropriate "Schedule" or "Reschedule" buttons based on `c.interviewStatus` rather than hardcoding all candidates to "Completed".
+  3. **Database Connection Resiliency**: Configured SQLAlchemy with `pool_pre_ping=True` and `pool_recycle=3600` inside [database.py](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/backend/app/database.py) to prevent crash loops from stale or disconnected pool connections.
+  4. **Functional Stage Pane Rendering Restoration**: Fixed a syntax bug in the `functionalList` rendering block where an opening `} else {` statement was accidentally removed. Restoring it fixed a javascript runtime error and successfully restored candidate table rendering under the Functional tab.
+  5. **Interview Page Styling Fix**: Created [globals.css](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/frontend-final-final/app/globals.css) and [layout.tsx](file:///c:/Users/KRISHNA%20GUPTA/Desktop/interviehire/frontend-final-final/app/interview/layout.tsx) for the interview route to import TailwindCSS styles globally for the interview room without polluting other layouts/styling rules in the project.
+  6. **Clean TypeScript Compilation**: Checked with local typecheck dry run (`tsc --noEmit`), verifying 100% clean build.

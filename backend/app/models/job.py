@@ -33,6 +33,7 @@ class Job(Base):
     resume_parameters = Column(Text, nullable=True)
     screening_parameters = Column(Text, nullable=True)
     functional_parameters = Column(Text, nullable=True)
+    screening_questions = Column(Text, nullable=True)  # JSON array of AI-generated screening interview questions
 
     # Pipeline stage toggles
     resume_analysis_enabled = Column(Boolean, default=True)

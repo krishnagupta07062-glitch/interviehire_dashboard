@@ -4384,10 +4384,165 @@ function toggleJobFlowResumeCriteriaEdit(job) {
 }
 
 function renderScreeningConfig(job, panel) {
+  const activeTab = panel.dataset.activeTab || 'parameters';
   const params = job.screeningParams || [];
   const totalParams = params.reduce((a, c) => a + (c.params ? c.params.length : 0), 0);
-  const isEditing = panel.dataset.screeningEditing === 'true';
-  const gridStyle = isEditing ? 'style="grid-template-columns: 28px 40px 1fr 120px 1fr 40px;"' : '';
+  const questions = job.screeningQuestions && job.screeningQuestions.length ? job.screeningQuestions : [
+    "Tell me about your professional background and key areas of expertise.",
+    "Why are you interested in this position and why do you want to join our organization?",
+    "What are your salary expectations, notice period, and preferred work arrangements?",
+    "Describe a challenging situation in your previous job and how you resolved it."
+  ];
+
+  let headerActionsHTML = '';
+  let mainContentHTML = '';
+
+  if (activeTab === 'parameters') {
+    const isEditing = panel.dataset.screeningEditing === 'true';
+    const gridStyle = isEditing ? 'style="grid-template-columns: 28px 40px 1fr 120px 1fr 40px;"' : '';
+    
+    headerActionsHTML = `
+      <button class="btn-jf-edit" id="jf-btn-edit-screening">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        ${isEditing ? 'Save' : 'Edit'}
+      </button>
+      <span class="jf-stat-pill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${totalParams} Parameters</span>
+    `;
+
+    mainContentHTML = `
+      ${params.map(cat => `
+        <div class="jf-param-category">
+          <h4 class="jf-param-category-title">
+            ${cat.category === 'Experience' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>' :
+              cat.category === 'Location' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' :
+              cat.category === 'Compensation' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' :
+              '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'}
+            ${cat.category}
+          </h4>
+          <div class="jf-param-table-header" ${gridStyle}>
+            <span class="jf-ph-drag"></span>
+            <span class="jf-ph-req">Req</span>
+            <span class="jf-ph-param">Parameter</span>
+            <span class="jf-ph-flex">Flexibility</span>
+            <span class="jf-ph-resp">Preferred Response</span>
+            ${isEditing ? '<span class="jf-ph-action" style="text-align:center;">Del</span>' : ''}
+          </div>
+          ${(cat.params || []).map(p => `
+            <div class="jf-param-row" ${gridStyle}>
+              <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+              <span class="jf-pr-req"><input type="checkbox" ${p.required ? 'checked' : ''} /></span>
+              <span class="jf-pr-param">
+                ${isEditing
+                  ? `<input type="text" class="jf-param-name-input jf-edit-input-sm" value="${p.name.replace(/"/g, '&quot;')}" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); border-radius:4px; color:var(--color-text-primary); padding:3px 6px; font-size:0.8rem;" />`
+                  : p.name}
+              </span>
+              <span class="jf-pr-flex">
+                <select class="jf-select-sm">
+                  <option ${p.flexibility === 'Select' || !p.flexibility ? 'selected' : ''}>Select</option>
+                  <option ${p.flexibility === 'Must Match' ? 'selected' : ''}>Must Match</option>
+                  <option ${p.flexibility === 'Flexible' ? 'selected' : ''}>Flexible</option>
+                  <option ${p.flexibility === 'Nice to Have' ? 'selected' : ''}>Nice to Have</option>
+                </select>
+              </span>
+              <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="${p.preferredResponse || ''}" placeholder="Enter preferred response..." /></span>
+              ${isEditing ? '<span class="jf-pr-action" style="display:flex; justify-content:center;"><button class="btn-jf-remove-field btn-screening-param-remove" style="color:var(--color-text-faint); font-size:1.1rem;">×</button></span>' : ''}
+            </div>
+          `).join('')}
+          ${isEditing ? `<button class="btn-jf-add-field btn-screening-param-add" data-cat="${cat.category}" style="margin-top:8px; width:100%; border:1px dashed var(--glass-border); background:rgba(255,255,255,0.02); color:var(--color-gold); font-size:0.76rem; padding:6px 12px; border-radius:6px; cursor:pointer;">+ Add Parameter</button>` : ''}
+        </div>
+      `).join('')}
+      <button class="btn-jf-primary" id="btn-screening-save" style="margin-top: 20px; width: 100%;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Parameters
+      </button>
+    `;
+  } else if (activeTab === 'questions') {
+    const isEditing = panel.dataset.questionsEditing === 'true';
+    
+    headerActionsHTML = `
+      <button class="btn-jf-edit" id="jf-btn-edit-screening-questions">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        ${isEditing ? 'Save' : 'Edit'}
+      </button>
+      <span class="jf-stat-pill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${questions.length} Questions</span>
+    `;
+
+    mainContentHTML = `
+      <div class="ra-criteria-group must-have" style="margin-top: 15px;">
+        <div class="ra-criteria-group-header">
+          <span class="ra-criteria-icon must-have"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+          <div>
+            <h4 class="ra-criteria-group-title must-have">Screening Interview Questions</h4>
+            <p class="ra-criteria-group-desc">The AI recruiter avatar will ask these questions to the candidate during screening</p>
+          </div>
+        </div>
+        <div class="ra-criteria-items" id="screening-questions-container">
+          ${isEditing 
+            ? questions.map((item, i) => `
+                <div class="ra-criteria-item-edit">
+                  <span class="ra-criteria-num must-have">${i + 1}</span>
+                  <input type="text" class="ra-criteria-edit-input screening-question-input" value="${item.replace(/"/g, '&quot;')}" style="width:100%;" />
+                  <button class="btn-ra-remove-criteria btn-screening-question-remove">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              `).join('') + `<button class="btn-ra-add-criteria" id="btn-add-screening-question">+ Add Question</button>`
+            : questions.map((item, i) => `
+                <div class="ra-criteria-item must-have" style="align-items: flex-start; gap: 10px; margin-bottom: 12px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px;">
+                  <span class="ra-criteria-num must-have" style="flex-shrink: 0; margin-top: 2px;">${i + 1}</span>
+                  <span class="ra-criteria-text" style="font-size: 0.9rem; line-height: 1.4; color: var(--color-text-primary);">${item}</span>
+                </div>
+              `).join('')
+          }
+        </div>
+      </div>
+      <button class="btn-jf-primary" id="btn-screening-questions-save" style="margin-top: 20px; width: 100%;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Questions
+      </button>
+    `;
+  } else if (activeTab === 'test') {
+    mainContentHTML = `
+      <div style="text-align:center; padding: 40px 20px; border:1px dashed var(--glass-border); border-radius:12px; margin-top:20px; background:rgba(255,255,255,0.01);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold)" stroke-width="1.5" style="margin-bottom:15px; opacity:0.8;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <h4 style="color:var(--color-text-primary); font-size:1.1rem; margin-bottom:8px;">Test Screen Simulation</h4>
+        <p style="color:var(--color-text-faint); font-size:0.85rem; max-width:400px; margin:0 auto 20px;">
+          Preview the Recruiter Screening room as a candidate. This runs in a simulation sandbox without writing data.
+        </p>
+        <button class="btn-jf-primary" style="display:inline-flex; width:auto; padding: 10px 24px;">Start Test Interview</button>
+      </div>
+    `;
+  } else if (activeTab === 'settings') {
+    mainContentHTML = `
+      <div style="padding: 20px; border:1px solid var(--glass-border); border-radius:12px; margin-top:20px; background:rgba(255,255,255,0.02);">
+        <h4 style="color:var(--color-text-primary); font-size:1rem; margin-bottom:15px;">Avatar & Room Configuration</h4>
+        <div style="display:flex; flex-direction:column; gap:15px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-size:0.9rem; color:var(--color-text-primary);">AI Recruiter Voice</div>
+              <div style="font-size:0.75rem; color:var(--color-text-faint);">Choose the avatar speaking voice profile</div>
+            </div>
+            <select class="jf-select-sm" style="width:140px;">
+              <option selected>Male Professional</option>
+              <option>Female Friendly</option>
+              <option>Female Friendly 2</option>
+            </select>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-size:0.9rem; color:var(--color-text-primary);">Proctoring Intensity</div>
+              <div style="font-size:0.75rem; color:var(--color-text-faint);">Detect browser tab switching and copy-paste</div>
+            </div>
+            <select class="jf-select-sm" style="width:140px;">
+              <option>Strict (Block & Warn)</option>
+              <option selected>Standard (Flag Only)</option>
+              <option>None (Disabled)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   panel.innerHTML = `
     <div class="jf-config-header">
@@ -4396,148 +4551,289 @@ function renderScreeningConfig(job, panel) {
         <p class="jf-config-subtitle">AI-powered screening with configurable parameters</p>
       </div>
       <div class="jf-config-header-actions">
-        <button class="btn-jf-edit" id="jf-btn-edit-screening">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          ${isEditing ? 'Save' : 'Edit'}
-        </button>
-        <span class="jf-stat-pill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${totalParams} Parameters</span>
-        <span class="jf-stat-pill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 5 – 10 mins</span>
+        ${headerActionsHTML}
       </div>
     </div>
 
     <div class="jf-screening-tabs">
-      <button class="jf-tab active">Screening Parameters</button>
-      <button class="jf-tab">Test Interview</button>
-      <button class="jf-tab">Settings</button>
+      <button class="jf-tab ${activeTab === 'parameters' ? 'active' : ''}" data-tab="parameters">Screening Parameters</button>
+      <button class="jf-tab ${activeTab === 'questions' ? 'active' : ''}" data-tab="questions">Interview Questions</button>
+      <button class="jf-tab ${activeTab === 'test' ? 'active' : ''}" data-tab="test">Test Interview</button>
+      <button class="jf-tab ${activeTab === 'settings' ? 'active' : ''}" data-tab="settings">Settings</button>
     </div>
 
-    ${params.map(cat => `
-      <div class="jf-param-category">
-        <h4 class="jf-param-category-title">
-          ${cat.category === 'Experience' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>' :
-            cat.category === 'Location' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' :
-            cat.category === 'Compensation' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' :
-            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'}
-          ${cat.category}
-        </h4>
-        <div class="jf-param-table-header" ${gridStyle}>
-          <span class="jf-ph-drag"></span>
-          <span class="jf-ph-req">Req</span>
-          <span class="jf-ph-param">Parameter</span>
-          <span class="jf-ph-flex">Flexibility</span>
-          <span class="jf-ph-resp">Preferred Response</span>
-          ${isEditing ? '<span class="jf-ph-action" style="text-align:center;">Del</span>' : ''}
-        </div>
-        ${(cat.params || []).map(p => `
-          <div class="jf-param-row" ${gridStyle}>
-            <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
-            <span class="jf-pr-req"><input type="checkbox" ${p.required ? 'checked' : ''} /></span>
-            <span class="jf-pr-param">
-              ${isEditing
-                ? `<input type="text" class="jf-param-name-input jf-edit-input-sm" value="${p.name.replace(/"/g, '&quot;')}" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); border-radius:4px; color:var(--color-text-primary); padding:3px 6px; font-size:0.8rem;" />`
-                : p.name}
-            </span>
-            <span class="jf-pr-flex">
-              <select class="jf-select-sm">
-                <option ${p.flexibility === 'Select' || !p.flexibility ? 'selected' : ''}>Select</option>
-                <option ${p.flexibility === 'Must Match' ? 'selected' : ''}>Must Match</option>
-                <option ${p.flexibility === 'Flexible' ? 'selected' : ''}>Flexible</option>
-                <option ${p.flexibility === 'Nice to Have' ? 'selected' : ''}>Nice to Have</option>
-              </select>
-            </span>
-            <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="${p.preferredResponse || ''}" placeholder="Enter preferred response..." /></span>
-            ${isEditing ? '<span class="jf-pr-action" style="display:flex; justify-content:center;"><button class="btn-jf-remove-field btn-screening-param-remove" style="color:var(--color-text-faint); font-size:1.1rem;">×</button></span>' : ''}
-          </div>
-        `).join('')}
-        ${isEditing ? `<button class="btn-jf-add-field btn-screening-param-add" data-cat="${cat.category}" style="margin-top:8px; width:100%; border:1px dashed var(--glass-border); background:rgba(255,255,255,0.02); color:var(--color-gold); font-size:0.76rem; padding:6px 12px; border-radius:6px; cursor:pointer;">+ Add Parameter</button>` : ''}
-      </div>
-    `).join('')}
-
-    <button class="btn-jf-primary" id="btn-screening-save" style="margin-top: 20px; width: 100%;">
-      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      Save Parameters
-    </button>
+    <div class="jf-screening-content-pane" style="margin-top: 15px;">
+      ${mainContentHTML}
+    </div>
   `;
 
-  panel.querySelectorAll('.jf-param-row').forEach(row => {
-    const reqCheckbox = row.querySelector('.jf-pr-req input');
-    const flexSelect = row.querySelector('.jf-pr-flex select');
-    const respInput = row.querySelector('.jf-pr-resp input');
-    [reqCheckbox, flexSelect, respInput].forEach(el => {
-      if (el) el.addEventListener('change', () => { el.closest('.jf-param-row').classList.add('jf-row-dirty'); });
+  // Wire tabs clicking
+  panel.querySelectorAll('.jf-screening-tabs .jf-tab').forEach(tabBtn => {
+    tabBtn.addEventListener('click', () => {
+      panel.dataset.activeTab = tabBtn.dataset.tab;
+      panel.dataset.screeningEditing = 'false';
+      panel.dataset.questionsEditing = 'false';
+      soundEngine.playClick();
+      renderScreeningConfig(job, panel);
     });
   });
 
-  if (isEditing) {
-    panel.querySelectorAll('.btn-screening-param-remove').forEach(btn => {
-      btn.addEventListener('click', () => {
-        btn.closest('.jf-param-row').remove();
+  // Action wiring based on tab
+  if (activeTab === 'parameters') {
+    const isEditing = panel.dataset.screeningEditing === 'true';
+
+    panel.querySelectorAll('.jf-param-row').forEach(row => {
+      const reqCheckbox = row.querySelector('.jf-pr-req input');
+      const flexSelect = row.querySelector('.jf-pr-flex select');
+      const respInput = row.querySelector('.jf-pr-resp input');
+      [reqCheckbox, flexSelect, respInput].forEach(el => {
+        if (el) el.addEventListener('change', () => { el.closest('.jf-param-row').classList.add('jf-row-dirty'); });
       });
     });
 
-    panel.querySelectorAll('.btn-screening-param-add').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const catEl = btn.closest('.jf-param-category');
-        const row = document.createElement('div');
-        row.className = 'jf-param-row editing-row';
-        row.style.gridTemplateColumns = '28px 40px 1fr 120px 1fr 40px';
-        row.innerHTML = `
-          <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
-          <span class="jf-pr-req"><input type="checkbox" /></span>
-          <span class="jf-pr-param"><input type="text" class="jf-param-name-input jf-edit-input-sm" value="" placeholder="New parameter name..." style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); border-radius:4px; color:var(--color-text-primary); padding:3px 6px; font-size:0.8rem;" /></span>
-          <span class="jf-pr-flex">
-            <select class="jf-select-sm">
-              <option selected>Select</option>
-              <option>Must Match</option>
-              <option>Flexible</option>
-              <option>Nice to Have</option>
-            </select>
-          </span>
-          <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="" placeholder="Enter preferred response..." /></span>
-          <span class="jf-pr-action" style="display:flex; justify-content:center;"><button class="btn-jf-remove-field btn-screening-param-remove" style="color:var(--color-text-faint); font-size:1.1rem;">×</button></span>
-        `;
-        catEl.insertBefore(row, btn);
-        row.querySelector('.btn-screening-param-remove').addEventListener('click', () => row.remove());
-        row.querySelector('.jf-param-name-input').focus();
+    if (isEditing) {
+      panel.querySelectorAll('.btn-screening-param-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          btn.closest('.jf-param-row').remove();
+        });
       });
+
+      panel.querySelectorAll('.btn-screening-param-add').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const catEl = btn.closest('.jf-param-category');
+          const row = document.createElement('div');
+          row.className = 'jf-param-row editing-row';
+          row.style.gridTemplateColumns = '28px 40px 1fr 120px 1fr 40px';
+          row.innerHTML = `
+            <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+            <span class="jf-pr-req"><input type="checkbox" /></span>
+            <span class="jf-pr-param"><input type="text" class="jf-param-name-input jf-edit-input-sm" value="" placeholder="New parameter name..." style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); border-radius:4px; color:var(--color-text-primary); padding:3px 6px; font-size:0.8rem;" /></span>
+            <span class="jf-pr-flex">
+              <select class="jf-select-sm">
+                <option selected>Select</option>
+                <option>Must Match</option>
+                <option>Flexible</option>
+                <option>Nice to Have</option>
+              </select>
+            </span>
+            <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="" placeholder="Enter preferred response..." /></span>
+            <span class="jf-pr-action" style="display:flex; justify-content:center;"><button class="btn-jf-remove-field btn-screening-param-remove" style="color:var(--color-text-faint); font-size:1.1rem;">×</button></span>
+          `;
+          catEl.insertBefore(row, btn);
+          row.querySelector('.btn-screening-param-remove').addEventListener('click', () => row.remove());
+          row.querySelector('.jf-param-name-input').focus();
+        });
+      });
+    }
+
+    const doSaveParams = async () => {
+      const newCats = [];
+      panel.querySelectorAll('.jf-param-category').forEach(catEl => {
+        const catTitle = catEl.querySelector('.jf-param-category-title')?.textContent.trim();
+        const paramsList = [];
+        catEl.querySelectorAll('.jf-param-row').forEach(row => {
+          const nameInput = row.querySelector('.jf-param-name-input');
+          const name = nameInput ? nameInput.value.trim() : row.querySelector('.jf-pr-param')?.textContent.trim();
+          if (!name) return;
+          const required = row.querySelector('.jf-pr-req input')?.checked ?? false;
+          const flexibility = row.querySelector('.jf-pr-flex select')?.value || 'Select';
+          const preferredResponse = row.querySelector('.jf-pr-resp input')?.value || '';
+          paramsList.push({ name, required, flexibility, preferredResponse });
+        });
+        newCats.push({ category: catTitle, params: paramsList });
+      });
+      
+      job.screeningParams = newCats;
+      await syncJobParametersInBackend(job);
+      saveStateToLocalStorage();
+      showPremiumToast('Screening parameters saved.', 'success');
+      panel.dataset.screeningEditing = 'false';
+      renderScreeningConfig(job, panel);
+    };
+
+    document.getElementById('btn-screening-save')?.addEventListener('click', doSaveParams);
+    document.getElementById('jf-btn-edit-screening')?.addEventListener('click', () => {
+      if (isEditing) {
+        doSaveParams();
+      } else {
+        panel.dataset.screeningEditing = 'true';
+        renderScreeningConfig(job, panel);
+      }
+    });
+
+  } else if (activeTab === 'questions') {
+    const isEditing = panel.dataset.questionsEditing === 'true';
+
+    if (isEditing) {
+      panel.querySelectorAll('.btn-screening-question-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          btn.closest('.ra-criteria-item-edit').remove();
+          panel.querySelectorAll('#screening-questions-container .ra-criteria-num').forEach((num, idx) => {
+            num.textContent = idx + 1;
+          });
+        });
+      });
+
+      document.getElementById('btn-add-screening-question')?.addEventListener('click', () => {
+        const addBtn = document.getElementById('btn-add-screening-question');
+        const container = document.getElementById('screening-questions-container');
+        const newItem = document.createElement('div');
+        newItem.className = 'ra-criteria-item-edit';
+        const count = container.querySelectorAll('.ra-criteria-item-edit').length + 1;
+        newItem.innerHTML = `
+          <span class="ra-criteria-num must-have">${count}</span>
+          <input type="text" class="ra-criteria-edit-input screening-question-input" value="" placeholder="Enter screening question..." style="width:100%;" />
+          <button class="btn-ra-remove-criteria btn-screening-question-remove">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        `;
+        container.insertBefore(newItem, addBtn);
+        newItem.querySelector('.btn-ra-remove-criteria').addEventListener('click', () => {
+          newItem.remove();
+          container.querySelectorAll('.ra-criteria-num').forEach((num, idx) => { num.textContent = idx + 1; });
+        });
+        newItem.querySelector('input').focus();
+      });
+    }
+
+    const doSaveQuestions = async () => {
+      const newQuestions = [];
+      panel.querySelectorAll('.screening-question-input').forEach(input => {
+        if (input.value.trim()) newQuestions.push(input.value.trim());
+      });
+      job.screeningQuestions = newQuestions.length ? newQuestions : questions;
+      await syncJobParametersInBackend(job);
+      saveStateToLocalStorage();
+      showPremiumToast('Screening questions saved.', 'success');
+      panel.dataset.questionsEditing = 'false';
+      renderScreeningConfig(job, panel);
+    };
+
+    document.getElementById('btn-screening-questions-save')?.addEventListener('click', doSaveQuestions);
+    document.getElementById('jf-btn-edit-screening-questions')?.addEventListener('click', () => {
+      if (isEditing) {
+        doSaveQuestions();
+      } else {
+        panel.dataset.questionsEditing = 'true';
+        renderScreeningConfig(job, panel);
+      }
     });
   }
+}
+
+function renderRecruiterScreeningQuestions(job, panel) {
+  if (!panel) return;
+  const isEditing = panel.dataset.editing === 'true';
+  const questions = job.screeningQuestions && job.screeningQuestions.length ? job.screeningQuestions : [
+    "Tell me about your professional background and key areas of expertise.",
+    "Why are you interested in this position and why do you want to join our organization?",
+    "What are your salary expectations, notice period, and preferred work arrangements?",
+    "Describe a challenging situation in your previous job and how you resolved it."
+  ];
+
+  panel.innerHTML = `
+    <div class="ra-config-section" style="margin-top: 30px; border-top: 1px solid var(--glass-border); padding-top: 20px;">
+      <div class="ra-config-header" style="margin-bottom: 15px;">
+        <div class="ra-config-header-left">
+          <h3 class="ra-config-title">Fixed Recruiter Screening Questions</h3>
+          <p class="ra-config-subtitle">These questions are asked to all candidates during the initial recruiter screening phase</p>
+        </div>
+        <button class="btn-ra-edit-criteria" id="btn-edit-recruiter-questions">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ${isEditing ? 'Save' : 'Edit'}
+        </button>
+      </div>
+
+      <div class="ra-criteria-group must-have">
+        <div class="ra-criteria-items" id="recruiter-questions-container">
+          ${isEditing 
+            ? questions.map((item, i) => `
+                <div class="ra-criteria-item-edit">
+                  <span class="ra-criteria-num must-have">${i + 1}</span>
+                  <input type="text" class="ra-criteria-edit-input recruiter-question-input" value="${item.replace(/"/g, '&quot;')}" style="width:100%;" />
+                  <button class="btn-ra-remove-criteria btn-recruiter-question-remove">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              `).join('') + `<button class="btn-ra-add-criteria" id="btn-add-recruiter-question">+ Add Question</button>`
+            : questions.map((item, i) => `
+                <div class="ra-criteria-item must-have" style="align-items: flex-start; gap: 10px; margin-bottom: 12px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border); padding: 10px; border-radius: 8px;">
+                  <span class="ra-criteria-num must-have" style="flex-shrink: 0; margin-top: 2px;">${i + 1}</span>
+                  <span class="ra-criteria-text" style="font-size: 0.9rem; line-height: 1.4; color: var(--color-text-primary);">${item}</span>
+                </div>
+              `).join('')
+          }
+        </div>
+      </div>
+      
+      ${isEditing ? `
+        <button class="btn-jf-primary" id="btn-save-recruiter-questions" style="margin-top: 20px; width: 100%;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Save Recruiter Questions
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  // Bind actions
+  const editBtn = panel.querySelector('#btn-edit-recruiter-questions');
+  const saveBtn = panel.querySelector('#btn-save-recruiter-questions');
 
   const doSave = async () => {
-    const newCats = [];
-    panel.querySelectorAll('.jf-param-category').forEach(catEl => {
-      const catTitle = catEl.querySelector('.jf-param-category-title')?.textContent.trim();
-      const paramsList = [];
-      catEl.querySelectorAll('.jf-param-row').forEach(row => {
-        const nameInput = row.querySelector('.jf-param-name-input');
-        const name = nameInput ? nameInput.value.trim() : row.querySelector('.jf-pr-param')?.textContent.trim();
-        if (!name) return;
-        const required = row.querySelector('.jf-pr-req input')?.checked ?? false;
-        const flexibility = row.querySelector('.jf-pr-flex select')?.value || 'Select';
-        const preferredResponse = row.querySelector('.jf-pr-resp input')?.value || '';
-        paramsList.push({ name, required, flexibility, preferredResponse });
-      });
-      newCats.push({ category: catTitle, params: paramsList });
+    const newQuestions = [];
+    panel.querySelectorAll('.recruiter-question-input').forEach(input => {
+      if (input.value.trim()) newQuestions.push(input.value.trim());
     });
-    
-    job.screeningParams = newCats;
+    job.screeningQuestions = newQuestions.length ? newQuestions : questions;
     await syncJobParametersInBackend(job);
     saveStateToLocalStorage();
-    showPremiumToast('Screening parameters saved.', 'success');
-    panel.dataset.screeningEditing = 'false';
-    renderScreeningConfig(job, panel);
+    showPremiumToast('Recruiter screening questions saved.', 'success');
+    panel.dataset.editing = 'false';
+    renderRecruiterScreeningQuestions(job, panel);
   };
 
-  document.getElementById('btn-screening-save')?.addEventListener('click', doSave);
-
-  document.getElementById('jf-btn-edit-screening')?.addEventListener('click', () => {
+  editBtn?.addEventListener('click', () => {
     if (isEditing) {
       doSave();
     } else {
-      panel.dataset.screeningEditing = 'true';
-      renderScreeningConfig(job, panel);
+      panel.dataset.editing = 'true';
+      renderRecruiterScreeningQuestions(job, panel);
     }
   });
+
+  saveBtn?.addEventListener('click', doSave);
+
+  if (isEditing) {
+    panel.querySelectorAll('.btn-recruiter-question-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.ra-criteria-item-edit').remove();
+        panel.querySelectorAll('#recruiter-questions-container .ra-criteria-num').forEach((num, idx) => {
+          num.textContent = idx + 1;
+        });
+      });
+    });
+
+    panel.querySelector('#btn-add-recruiter-question')?.addEventListener('click', () => {
+      const addBtn = panel.querySelector('#btn-add-recruiter-question');
+      const container = panel.querySelector('#recruiter-questions-container');
+      const newItem = document.createElement('div');
+      newItem.className = 'ra-criteria-item-edit';
+      const count = container.querySelectorAll('.ra-criteria-item-edit').length + 1;
+      newItem.innerHTML = `
+        <span class="ra-criteria-num must-have">\${count}</span>
+        <input type="text" class="ra-criteria-edit-input recruiter-question-input" value="" placeholder="Enter screening question..." style="width:100%;" />
+        <button class="btn-ra-remove-criteria btn-recruiter-question-remove">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      `;
+      container.insertBefore(newItem, addBtn);
+      newItem.querySelector('.btn-ra-remove-criteria').addEventListener('click', () => {
+        newItem.remove();
+        container.querySelectorAll('.ra-criteria-num').forEach((num, idx) => { num.textContent = idx + 1; });
+      });
+      newItem.querySelector('input').focus();
+    });
+  }
 }
 
 function renderFunctionalConfig(job, panel) {
@@ -8720,21 +9016,24 @@ function renderJobDetailPanes(job) {
   const screeningList = document.getElementById('list-stage-screening');
   if (screeningList) {
     const screeningCands = jobCandidates.filter(c => c.status === 'Screening');
+    const statusIcon = (status) => {
+      if (status === 'Completed') return '<span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span>';
+      if (status === 'Incomplete') return '<span class="status-chip incomplete"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg> Incomplete</span>';
+      if (status === 'Slot Missed') return '<span class="status-chip slot-missed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Slot Missed</span>';
+      if (status === 'Scheduled') return '<span class="status-chip scheduled"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> Scheduled</span>';
+      if (status === 'Pending') return '<span class="status-chip pending"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> Pending</span>';
+      return `<span class="status-chip">\${status || '—'}</span>`;
+    };
+
     if (screeningCands.length === 0) {
       screeningList.innerHTML = `
         <div class="jd-empty-pane">
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
           <p>Recruiter Screening — No candidates in this stage</p>
         </div>
+        <div class="screening-questions-section" id="screening-questions-section-wrap"></div>
       `;
     } else {
-      const statusIcon = (status) => {
-        if (status === 'Completed') return '<span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span>';
-        if (status === 'Incomplete') return '<span class="status-chip incomplete"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg> Incomplete</span>';
-        if (status === 'Slot Missed') return '<span class="status-chip slot-missed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Slot Missed</span>';
-        return '<span class="status-chip">—</span>';
-      };
-
       const screeningBadge = (val) => {
         if (!val) return '—';
         const cls = val === 'Good fit' ? 'fit-good' : val === 'Moderate fit' ? 'fit-moderate' : 'fit-poor';
@@ -8821,8 +9120,10 @@ function renderJobDetailPanes(job) {
             </div>
           </div>
         </div>
+        <div class="screening-questions-section" id="screening-questions-section-wrap"></div>
       `;
     }
+    renderRecruiterScreeningQuestions(job, document.getElementById('screening-questions-section-wrap'));
   }
 
   // 3. Functional pane
@@ -8837,6 +9138,14 @@ function renderJobDetailPanes(job) {
         </div>
       `;
     } else {
+      const statusIcon = (status) => {
+        if (status === 'Completed') return '<span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span>';
+        if (status === 'Incomplete') return '<span class="status-chip incomplete"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg> Incomplete</span>';
+        if (status === 'Slot Missed') return '<span class="status-chip slot-missed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Slot Missed</span>';
+        if (status === 'Scheduled') return '<span class="status-chip scheduled"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> Scheduled</span>';
+        if (status === 'Pending') return '<span class="status-chip pending"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> Pending</span>';
+        return `<span class="status-chip">${status || '—'}</span>`;
+      };
       const cheatColor = (prob) => {
         if (prob === 'Low') return 'cheat-low';
         if (prob === 'Medium') return 'cheat-medium';
@@ -8893,6 +9202,8 @@ function renderJobDetailPanes(job) {
               ${displayFunctionalCands.map(c => {
                 const initials = c.name.split(' ').map(n=>n[0]).join('');
                 const sourceIcon = c.source === 'Direct Link' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>';
+                const actionLabel = c.interviewStatus === 'Slot Missed' ? 'Reschedule' : 'Schedule';
+                const actionClass = c.interviewStatus === 'Slot Missed' ? 'btn-reschedule' : 'btn-schedule';
                 return `
                   <tr data-candidate-id="${c.id}">
                     <td><input type="checkbox" class="table-checkbox-row" /></td>
@@ -8904,19 +9215,23 @@ function renderJobDetailPanes(job) {
                       </div>
                     </td>
                     <td>${c.phone || '—'}</td>
-                    <td><span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span></td>
+                    <td>${statusIcon(c.interviewStatus)}</td>
                     <td><a href="#" class="report-link report-new" data-cand-id="${c.id}">Report <span class="new-badge">New</span> <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></td>
                     <td><span class="interview-score-dot ${scoreColor(c.interviewScore)}"></span> ${c.interviewScore != null ? c.interviewScore : '—'}</td>
                     <td><span class="cheat-prob-badge ${cheatColor(c.cheatProbability)}">${c.cheatProbability ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg> ' + c.cheatProbability : '—'}</span></td>
                     <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
                     <td>${screeningBadge(c.recruiterScreening)}</td>
                     <td>
-                      <select class="action-select-status">
-                        <option value="">Select Sta...</option>
-                        <option value="advance">Advance</option>
-                        <option value="reject">Reject</option>
-                        <option value="hold">Hold</option>
-                      </select>
+                      <div style="display:flex;gap:6px;align-items:center;">
+                        ${c.interviewStatus !== 'Completed' ? `
+                          <button class="${actionClass}" data-candidate-id="${c.id}">${c.interviewStatus === 'Slot Missed' ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> ' : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> '}${actionLabel}</button>
+                        ` : ''}
+                        <select class="action-select-status" data-cand-id="${c.id}">
+                          <option value="">Select Action</option>
+                          <option value="advance">Hire Candidate</option>
+                          <option value="reject">Reject</option>
+                        </select>
+                      </div>
                     </td>
                   </tr>
                 `;
@@ -9149,22 +9464,13 @@ function renderJobDetailPanes(job) {
               ids.forEach(async cid => {
                 const cand = AppState.candidates.find(c => c.id === cid);
                 if (cand) {
-                  const patchData = {};
                   const isFunctional = cand.status === 'Functional';
-                  const statusVal = action === 'reschedule' ? 'incomplete' : 'scheduled';
-                  
-                  if (isFunctional) {
-                    patchData.functional_status = statusVal;
-                  } else {
-                    patchData.screening_status = statusVal;
-                  }
-                  patchData.attempted_at = isoDateTime;
-
+                  const stage = isFunctional ? 'functional' : 'screening';
                   try {
-                    await apiFetch(`/api/jobs/applicants/${cid}`, {
-                      method: 'PATCH',
+                    await apiFetch(`/api/jobs/applicants/${cid}/schedule`, {
+                      method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(patchData)
+                      body: JSON.stringify({ stage: stage, scheduled_at: isoDateTime })
                     });
                   } catch (err) {
                     console.error("Failed to schedule candidate:", cid, err);
@@ -9206,22 +9512,14 @@ function renderJobDetailPanes(job) {
           const cand = AppState.candidates.find(c => c.id === candId);
           if (cand) {
             const isoDateTime = new Date(`${date}T${time}`).toISOString();
-            const patchData = {};
             const isFunctional = cand.status === 'Functional';
-            const statusVal = mode === 'reschedule' ? 'incomplete' : 'scheduled';
-            
-            if (isFunctional) {
-              patchData.functional_status = statusVal;
-            } else {
-              patchData.screening_status = statusVal;
-            }
-            patchData.attempted_at = isoDateTime;
+            const stage = isFunctional ? 'functional' : 'screening';
 
             try {
-              const updated = await apiFetch(`/api/jobs/applicants/${candId}`, {
-                method: 'PATCH',
+              const updated = await apiFetch(`/api/jobs/applicants/${candId}/schedule`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(patchData)
+                body: JSON.stringify({ stage: stage, scheduled_at: isoDateTime })
               });
               if (updated) {
                 await loadStateFromBackend();
@@ -9384,15 +9682,12 @@ async function updateCandidateStatus(candId, newStatus) {
         if (newStatus === 'Hired') {
           patchData.remarks = 'Hired';
         } else if (newStatus === 'Functional') {
-          patchData.functional_status = 'scheduled';
+          patchData.functional_status = 'pending';
           patchData.functional_score = null;
           patchData.cheat_probability = null;
           patchData.remarks = null;
         } else if (newStatus === 'Screening') {
-          patchData.screening_status = 'completed';
-          if (candidate.interviewScore === null || candidate.interviewScore === '—') {
-            patchData.screening_score = Math.floor(Math.random() * 31) + 60;
-          }
+          patchData.screening_status = 'pending';
           patchData.functional_status = null;
           patchData.remarks = null;
         }
@@ -9425,7 +9720,6 @@ async function updateCandidateStatus(candId, newStatus) {
     );
     return;
   }
-
   const patchData = {};
   if (newStatus === 'Resume') {
     patchData.screening_status = null;
@@ -9612,6 +9906,9 @@ async function syncJobParametersInBackend(job) {
       });
       data.screening_parameters = screening_parameters;
     }
+    if (job.screeningQuestions) {
+      data.screening_questions = job.screeningQuestions;
+    }
     await apiFetch(`/api/jobs/${job.id}/parameters`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -9784,7 +10081,8 @@ async function loadStateFromBackend() {
           },
           questions: questionsList,
           resumeCriteria: criteria,
-          screeningParams: screeningParams
+          screeningParams: screeningParams,
+          screeningQuestions: j.screening_questions || []
         };
       });
     }
