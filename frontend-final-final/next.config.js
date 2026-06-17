@@ -6,14 +6,11 @@ const nextConfig = {
   reactStrictMode: false,
 
   async rewrites() {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     return [
       {
         source: '/api/:path*',
-        destination: 'http://127.0.0.1:8000/api/:path*',
-      },
-      {
-        source: '/ws',
-        destination: 'http://127.0.0.1:8000/ws',
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },

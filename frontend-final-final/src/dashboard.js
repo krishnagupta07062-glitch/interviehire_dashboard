@@ -8,6 +8,15 @@ if (typeof window !== 'undefined') {
 
 let nextRouter = null;
 
+// Base URL for the AI interview/Fastify service (:4000). Config-driven so it
+// works off-localhost (prod/preview). Falls back to localhost for dev.
+function getAiApiBase() {
+  if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_AI_API_URL) {
+    return process.env.NEXT_PUBLIC_AI_API_URL.replace(/\/$/, '');
+  }
+  return 'http://localhost:4000';
+}
+
 export function initDashboardPage(router) {
   if (router) {
     nextRouter = router;
@@ -3387,7 +3396,7 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
         if (rUrl) {
           let fullUrl = rUrl;
           if (rUrl.startsWith('/')) {
-            fullUrl = `http://localhost:4000${rUrl}`;
+            fullUrl = `${getAiApiBase()}${rUrl}`;
           }
           reportJobEl.innerHTML = `${candidate.jobApplied} &bull; <a href="${fullUrl}" target="_blank" class="pdf-report-link" style="color: var(--color-gold); text-decoration: underline; font-weight: 500; cursor: pointer;">Download AI Report (PDF) 📄</a>`;
         } else {
@@ -3486,9 +3495,9 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
     let extraButtons = '';
     if (candidate.status === 'Functional') {
       extraButtons += `
-        <a href="http://localhost:3000/interview?sessionId=${candidateId}" target="_blank" class="btn-stage-advance" style="background: var(--color-gold); color: black; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-weight: 600; padding: 12px 20px; border-radius: 8px; cursor: pointer; border: none; font-family: var(--font-sans); margin-left: 8px;">
+        <button type="button" class="btn-stage-advance btn-open-interview-portal" data-candidate-id="${candidateId}" style="background: var(--color-gold); color: black; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-weight: 600; padding: 12px 20px; border-radius: 8px; cursor: pointer; border: none; font-family: var(--font-sans); margin-left: 8px;">
           Open Interview Portal 🔗
-        </a>
+        </button>
       `;
     }
 
@@ -3506,6 +3515,31 @@ function openReportDrawerForCandidate(candidateId, forceReportType = null) {
         ${extraButtons}
       </div>
     `;
+    actionsBody.querySelector('.btn-open-interview-portal')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const cid = btn.getAttribute('data-candidate-id');
+      const originalLabel = btn.innerHTML;
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      btn.innerHTML = 'Opening…';
+      // Resolve the real stage-specific session id — uuid5(applicant_id, stage) —
+      // from the backend (single source of truth) rather than passing the raw
+      // candidate id, which has no InterviewSession row and 500s the :4000 start.
+      let sessionId = cid;
+      try {
+        const data = await apiFetch(`/api/public/interview-session/${cid}`);
+        if (data && data.resolved_session_id) {
+          sessionId = data.resolved_session_id;
+        }
+      } catch (err) {
+        console.warn('Failed to resolve interview session id, falling back to candidate id:', err);
+      }
+      // Same-origin relative URL — config-driven, works off-localhost.
+      window.open(`/interview?sessionId=${encodeURIComponent(sessionId)}`, '_blank');
+      btn.disabled = false;
+      btn.style.opacity = '';
+      btn.innerHTML = originalLabel;
+    });
     actionsBody.querySelector('.btn-stage-reject')?.addEventListener('click', () => {
       updateCandidateStatus(candidateId, 'Rejected');
       closeAllDrawers();
@@ -3895,6 +3929,95 @@ function normalizeApplicationFields(raw) {
   return raw.map(name => ({ name, enabled: true, required: false }));
 }
 
+function escapeHtmlAttr(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Renders the public-facing career listing + application form for a job using
+// its real config (title, meta, description, enabled application fields) in a
+// dismissible modal. Replaces the old "coming soon" stub.
+function openCareerPagePreview(job) {
+  document.getElementById('cp-preview-overlay')?.remove();
+
+  const title = job.cardName || job.roleName || 'Open Position';
+  const company = job.createdBy || 'IntervieHire';
+  const metaBits = [job.location, job.employmentType, job.experienceBand].filter(Boolean);
+  const fields = normalizeApplicationFields(job.applicationFormFields || job.applicationFields).filter(f => f.enabled);
+
+  // Lightweight structured description -> HTML (headings + bullets + paragraphs).
+  const descText = job.description || '';
+  const sectionKeywords = /^(job overview|key responsibilities|responsibilities|requirements|qualifications|about|skills|what you.ll do|what we.re looking for|nice to have|benefits)/i;
+  let descHtml = '';
+  let inList = false;
+  if (descText.trim()) {
+    descText.split('\n').map(l => l.trim()).forEach(line => {
+      if (!line) { if (inList) { descHtml += '</ul>'; inList = false; } return; }
+      if (sectionKeywords.test(line) && line.length < 60) {
+        if (inList) { descHtml += '</ul>'; inList = false; }
+        descHtml += `<h4 style="margin:18px 0 6px; font-size:0.95rem; color:var(--color-text-primary,#fff);">${escapeHtmlAttr(line)}</h4>`;
+        return;
+      }
+      const bullet = line.match(/^[-•*]\s+(.+)/);
+      if (bullet) {
+        if (!inList) { descHtml += '<ul style="margin:4px 0 4px 18px; padding:0;">'; inList = true; }
+        descHtml += `<li style="margin:3px 0; opacity:0.85;">${escapeHtmlAttr(bullet[1])}</li>`;
+        return;
+      }
+      if (inList) { descHtml += '</ul>'; inList = false; }
+      descHtml += `<p style="margin:6px 0; opacity:0.85; line-height:1.55;">${escapeHtmlAttr(line)}</p>`;
+    });
+    if (inList) descHtml += '</ul>';
+  } else {
+    descHtml = '<p style="opacity:0.5;">No description provided.</p>';
+  }
+
+  const fieldsHtml = fields.length
+    ? fields.map(f => `
+        <label style="display:block; margin-bottom:14px;">
+          <span style="display:block; font-size:0.8rem; margin-bottom:5px; opacity:0.85;">${escapeHtmlAttr(f.name)}${f.required ? ' <span style="color:var(--color-gold,#d4af37);">*</span>' : ''}</span>
+          <input type="text" disabled placeholder="${escapeHtmlAttr(f.name)}" style="width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid var(--glass-border,rgba(255,255,255,0.12)); background:rgba(0,0,0,0.25); color:var(--color-text-primary,#fff); font-family:var(--font-sans,inherit); font-size:0.85rem;" />
+        </label>`).join('')
+    : '<p style="opacity:0.5;">No application fields enabled.</p>';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cp-preview-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.style.cssText = 'position:fixed; inset:0; z-index:99999; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px; overflow-y:auto; background:rgba(0,0,0,0.6); backdrop-filter:blur(6px);';
+  overlay.innerHTML = `
+    <div style="width:100%; max-width:680px; background:var(--glass-bg,#14151c); border:1px solid var(--glass-border,rgba(255,255,255,0.12)); border-radius:16px; box-shadow:0 24px 60px rgba(0,0,0,0.5); overflow:hidden; font-family:var(--font-sans,inherit); color:var(--color-text-primary,#fff);">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--glass-border,rgba(255,255,255,0.1));">
+        <span style="font-size:0.75rem; letter-spacing:0.08em; text-transform:uppercase; opacity:0.6;">Career Page Preview</span>
+        <button id="cp-preview-close" aria-label="Close preview" style="background:none; border:none; color:var(--color-text-primary,#fff); cursor:pointer; font-size:1.4rem; line-height:1; opacity:0.7;">&times;</button>
+      </div>
+      <div style="padding:28px 32px 36px;">
+        <span style="font-size:0.8rem; opacity:0.65;">${escapeHtmlAttr(company)}</span>
+        <h2 style="margin:6px 0 10px; font-size:1.6rem;">${escapeHtmlAttr(title)}</h2>
+        ${metaBits.length ? `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:22px;">${metaBits.map(m => `<span style="font-size:0.75rem; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid var(--glass-border,rgba(255,255,255,0.1));">${escapeHtmlAttr(m)}</span>`).join('')}</div>` : ''}
+        <div style="margin-bottom:28px; font-size:0.88rem;">${descHtml}</div>
+        <h3 style="margin:0 0 14px; font-size:1.05rem;">Apply for this role</h3>
+        <form onsubmit="return false;">${fieldsHtml}
+          <button type="button" disabled style="margin-top:6px; width:100%; padding:12px; border-radius:8px; border:none; background:var(--color-gold,#d4af37); color:#000; font-weight:600; font-family:var(--font-sans,inherit); cursor:not-allowed; opacity:0.85;">Submit Application</button>
+        </form>
+        <p style="margin-top:14px; font-size:0.72rem; opacity:0.5; text-align:center;">Preview only — this is how candidates see the public listing.</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('#cp-preview-close')?.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function escClose(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
+  });
+}
+
 function renderCareerPageConfig(job, panel) {
   // Normalize fields to object format
   job.applicationFormFields = normalizeApplicationFields(job.applicationFormFields || job.applicationFields);
@@ -4099,9 +4222,9 @@ function renderCareerPageConfig(job, panel) {
     openApplicationFormEditor(job, panel);
   });
 
-  // Preview button
+  // Preview button — opens a live preview of the public career listing.
   document.getElementById('btn-cp-preview')?.addEventListener('click', () => {
-    showPremiumToast('Career page preview coming soon.', 'info');
+    openCareerPagePreview(job);
   });
 }
 
@@ -4217,7 +4340,7 @@ function renderResumeAnalysisConfig(job, panel) {
   const mustHave = criteria.mustHave || [];
   const redFlags = criteria.redFlags || [];
   const goodToHave = criteria.goodToHave || [];
-  const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
+  const goodToHaveMinMatch = goodToHave.length > 0 ? (criteria.goodToHaveMinMatch || 1) : 0;
 
   panel.innerHTML = `
     <div class="jf-config-header">
@@ -4267,7 +4390,7 @@ function renderResumeAnalysisConfig(job, panel) {
           <p class="ra-criteria-group-desc">Candidates meeting the threshold will be shortlisted; others waitlisted for review.</p>
         </div>
       </div>
-      <div class="ra-criteria-min-match">Minimum match: ${goodToHaveMinMatch} out of ${goodToHave.length} criteria</div>
+      <div class="ra-criteria-min-match" style="${goodToHave.length === 0 ? 'display: none;' : ''}">Minimum match: ${goodToHaveMinMatch} out of ${goodToHave.length} criteria</div>
       <div class="ra-criteria-items">${goodToHave.map((item, i) => `<div class="ra-criteria-item good-to-have"><span class="ra-criteria-num good-to-have">${i+1}</span><span class="ra-criteria-text">${item}</span></div>`).join('')}</div>
     </div>
   `;
@@ -4290,7 +4413,7 @@ function toggleJobFlowResumeCriteriaEdit(job) {
   if (isEditing) {
     // Save mode
     panel.classList.remove('editing');
-    const criteria = { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
+    const criteria = { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 0 };
     panel.querySelectorAll('.ra-criteria-group.must-have .ra-criteria-edit-input').forEach(input => {
       if (input.value.trim()) criteria.mustHave.push(input.value.trim());
     });
@@ -4301,7 +4424,11 @@ function toggleJobFlowResumeCriteriaEdit(job) {
       if (input.value.trim()) criteria.goodToHave.push(input.value.trim());
     });
     const minMatch = panel.querySelector('.ra-min-match-input');
-    if (minMatch) criteria.goodToHaveMinMatch = parseInt(minMatch.value) || 1;
+    if (minMatch && criteria.goodToHave.length > 0) {
+      criteria.goodToHaveMinMatch = parseInt(minMatch.value) || 1;
+    } else {
+      criteria.goodToHaveMinMatch = criteria.goodToHave.length > 0 ? 1 : 0;
+    }
 
     job.resumeCriteria = criteria;
     saveStateToLocalStorage(job);
@@ -4319,7 +4446,7 @@ function toggleJobFlowResumeCriteriaEdit(job) {
   const mustHave = criteria.mustHave || [];
   const redFlags = criteria.redFlags || [];
   const goodToHave = criteria.goodToHave || [];
-  const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
+  const goodToHaveMinMatch = goodToHave.length > 0 ? (criteria.goodToHaveMinMatch || 1) : 0;
   const groupsData = { mustHave, redFlags, goodToHave };
 
   if (editBtn) {
@@ -4344,6 +4471,23 @@ function toggleJobFlowResumeCriteriaEdit(job) {
       <button class="btn-ra-add-criteria" data-group="${groupType}">+ Add Criterion</button>
     `;
 
+    const updateMinMatchDisplay = () => {
+      const minMatchEl = panel.querySelector('.ra-criteria-min-match');
+      if (!minMatchEl) return;
+      const currentGoodInputs = panel.querySelectorAll('.ra-criteria-group.good-to-have .ra-criteria-edit-input');
+      const totalGood = currentGoodInputs.length;
+      if (totalGood === 0) {
+        minMatchEl.style.display = 'none';
+      } else {
+        minMatchEl.style.display = '';
+        const minInput = minMatchEl.querySelector('.ra-min-match-input');
+        let currentVal = minInput ? parseInt(minInput.value) : goodToHaveMinMatch;
+        if (isNaN(currentVal) || currentVal < 1) currentVal = 1;
+        if (currentVal > totalGood) currentVal = totalGood;
+        minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentVal}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+      }
+    };
+
     // Add button handlers
     itemsContainer.querySelectorAll('.btn-ra-remove-criteria').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -4352,6 +4496,7 @@ function toggleJobFlowResumeCriteriaEdit(job) {
         itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => {
           num.textContent = idx + 1;
         });
+        if (groupType === 'goodToHave') updateMinMatchDisplay();
       });
     });
 
@@ -4371,17 +4516,24 @@ function toggleJobFlowResumeCriteriaEdit(job) {
       newItem.querySelector('.btn-ra-remove-criteria').addEventListener('click', () => {
         newItem.remove();
         itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => { num.textContent = idx + 1; });
+        if (groupType === 'goodToHave') updateMinMatchDisplay();
       });
       newItem.querySelector('input').focus();
+      if (groupType === 'goodToHave') updateMinMatchDisplay();
     });
   });
 
   // Make min match editable
   const minMatchEl = panel.querySelector('.ra-criteria-min-match');
   if (minMatchEl) {
-    const currentMin = goodToHaveMinMatch;
-    const totalGood = goodToHave.length;
-    minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+    if (goodToHave.length === 0) {
+      minMatchEl.style.display = 'none';
+    } else {
+      minMatchEl.style.display = '';
+      const currentMin = goodToHaveMinMatch;
+      const totalGood = goodToHave.length;
+      minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+    }
   }
 }
 
@@ -5514,9 +5666,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // ============================================================
   // API calls use relative paths — Next.js proxies /api/* → http://127.0.0.1:8000/api/*
   let API_BASE = '';
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    API_BASE = 'http://127.0.0.1:8000';
-  }
 
   async function initAuth() {
     try {
@@ -5823,12 +5972,19 @@ document.addEventListener('DOMContentLoaded', () => {
   window.toggleJobKebab = function(btn) {
     const dropdown = btn.nextElementSibling;
     const isOpen = dropdown.classList.contains('open');
+    // Close all open dropdowns and remove elevation from all cards
     document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (!isOpen) dropdown.classList.add('open');
+    document.querySelectorAll('.job-card.kebab-open').forEach(c => c.classList.remove('kebab-open'));
+    if (!isOpen) {
+      dropdown.classList.add('open');
+      // Elevate the parent card so its z-index exceeds all siblings
+      btn.closest('.job-card')?.classList.add('kebab-open');
+    }
   };
 
   document.addEventListener('click', () => {
     document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.job-card.kebab-open').forEach(c => c.classList.remove('kebab-open'));
   });
 
   window.handleJobKebab = async function(jobId, action) {
@@ -7426,7 +7582,18 @@ function initSourcing() {
   if (btnUpgrade) {
     btnUpgrade.addEventListener('click', () => {
       soundEngine.playClick();
-      showPremiumToast("Plan upgrade flow coming soon. Contact sales for Enterprise access.", "info");
+      // Real "contact sales" flow: open a prefilled email to the sales team.
+      const orgLabel = (document.getElementById('org-switcher-label')?.textContent || '').trim();
+      const workspace = (orgLabel && orgLabel !== 'Select Org') ? orgLabel : '(not specified)';
+      const requester = AppState.user?.email || '(not specified)';
+      const subject = encodeURIComponent('Enterprise plan upgrade request — IntervieHire');
+      const body = encodeURIComponent(
+        "Hi IntervieHire team,\n\nWe'd like to upgrade our workspace to the Enterprise plan. " +
+        "Please reach out with pricing and next steps.\n\n" +
+        `Workspace: ${workspace}\nRequested by: ${requester}\n\nThanks!`
+      );
+      window.location.href = `mailto:sales@interviehire.com?subject=${subject}&body=${body}`;
+      showPremiumToast("Opening your email client to contact sales…", "info");
     });
   }
 }
@@ -8620,7 +8787,7 @@ function toggleResumeCriteriaEdit(job) {
   if (isEditing) {
     // Save mode
     section.classList.remove('editing');
-    const criteria = { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
+    const criteria = { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 0 };
     section.querySelectorAll('.ra-criteria-group.must-have .ra-criteria-edit-input').forEach(input => {
       if (input.value.trim()) criteria.mustHave.push(input.value.trim());
     });
@@ -8631,7 +8798,11 @@ function toggleResumeCriteriaEdit(job) {
       if (input.value.trim()) criteria.goodToHave.push(input.value.trim());
     });
     const minMatch = section.querySelector('.ra-min-match-input');
-    if (minMatch) criteria.goodToHaveMinMatch = parseInt(minMatch.value) || 1;
+    if (minMatch && criteria.goodToHave.length > 0) {
+      criteria.goodToHaveMinMatch = parseInt(minMatch.value) || 1;
+    } else {
+      criteria.goodToHaveMinMatch = criteria.goodToHave.length > 0 ? 1 : 0;
+    }
 
     job.resumeCriteria = criteria;
     saveStateToLocalStorage();
@@ -8657,7 +8828,7 @@ function toggleResumeCriteriaEdit(job) {
   const mustHave = criteria.mustHave || [];
   const redFlags = criteria.redFlags || [];
   const goodToHave = criteria.goodToHave || [];
-  const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
+  const goodToHaveMinMatch = goodToHave.length > 0 ? (criteria.goodToHaveMinMatch || 1) : 0;
   const groupsData = { mustHave, redFlags, goodToHave };
 
   const editBtn = document.getElementById('btn-ra-edit-criteria');
@@ -8683,6 +8854,23 @@ function toggleResumeCriteriaEdit(job) {
       <button class="btn-ra-add-criteria" data-group="${groupType}">+ Add Criterion</button>
     `;
 
+    const updateMinMatchDisplay = () => {
+      const minMatchEl = section.querySelector('.ra-criteria-min-match');
+      if (!minMatchEl) return;
+      const currentGoodInputs = section.querySelectorAll('.ra-criteria-group.good-to-have .ra-criteria-edit-input');
+      const totalGood = currentGoodInputs.length;
+      if (totalGood === 0) {
+        minMatchEl.style.display = 'none';
+      } else {
+        minMatchEl.style.display = '';
+        const minInput = minMatchEl.querySelector('.ra-min-match-input');
+        let currentVal = minInput ? parseInt(minInput.value) : goodToHaveMinMatch;
+        if (isNaN(currentVal) || currentVal < 1) currentVal = 1;
+        if (currentVal > totalGood) currentVal = totalGood;
+        minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentVal}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+      }
+    };
+
     // Add button handlers
     itemsContainer.querySelectorAll('.btn-ra-remove-criteria').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -8691,6 +8879,7 @@ function toggleResumeCriteriaEdit(job) {
         itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => {
           num.textContent = idx + 1;
         });
+        if (groupType === 'goodToHave') updateMinMatchDisplay();
       });
     });
 
@@ -8710,17 +8899,24 @@ function toggleResumeCriteriaEdit(job) {
       newItem.querySelector('.btn-ra-remove-criteria').addEventListener('click', () => {
         newItem.remove();
         itemsContainer.querySelectorAll('.ra-criteria-num').forEach((num, idx) => { num.textContent = idx + 1; });
+        if (groupType === 'goodToHave') updateMinMatchDisplay();
       });
       newItem.querySelector('input').focus();
+      if (groupType === 'goodToHave') updateMinMatchDisplay();
     });
   });
 
   // Make min match editable
   const minMatchEl = section.querySelector('.ra-criteria-min-match');
   if (minMatchEl) {
-    const currentMin = goodToHaveMinMatch;
-    const totalGood = goodToHave.length;
-    minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+    if (goodToHave.length === 0) {
+      minMatchEl.style.display = 'none';
+    } else {
+      minMatchEl.style.display = '';
+      const currentMin = goodToHaveMinMatch;
+      const totalGood = goodToHave.length;
+      minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
+    }
   }
 }
 
@@ -8910,7 +9106,7 @@ function renderJobDetailPanes(job) {
     const mustHave = criteria.mustHave || [];
     const redFlags = criteria.redFlags || [];
     const goodToHave = criteria.goodToHave || [];
-    const goodToHaveMinMatch = criteria.goodToHaveMinMatch || 1;
+    const goodToHaveMinMatch = goodToHave.length > 0 ? (criteria.goodToHaveMinMatch || 1) : 0;
 
     const criteriaHTML = `
       <div class="ra-candidates-section">
@@ -8991,7 +9187,7 @@ function renderJobDetailPanes(job) {
               <p class="ra-criteria-group-desc">Candidates meeting the threshold will be shortlisted; others waitlisted for review.</p>
             </div>
           </div>
-          <div class="ra-criteria-min-match">Minimum match: ${goodToHaveMinMatch} out of ${goodToHave.length} criteria</div>
+          <div class="ra-criteria-min-match" style="${goodToHave.length === 0 ? 'display: none;' : ''}">Minimum match: ${goodToHaveMinMatch} out of ${goodToHave.length} criteria</div>
           <div class="ra-criteria-items">
             ${goodToHave.map((item, i) => `
               <div class="ra-criteria-item good-to-have">
@@ -9853,11 +10049,6 @@ let wsReconnectTimeout = null;
 
 async function apiFetch(url, options = {}) {
   let targetUrl = url;
-  if (url.startsWith('/api/')) {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      targetUrl = `http://127.0.0.1:8000${url}`;
-    }
-  }
   // Always include credentials so the auth cookie is sent with every request
   const res = await fetch(targetUrl, { credentials: 'include', ...options });
   if (!res.ok) {
@@ -10035,12 +10226,15 @@ async function loadStateFromBackend() {
           });
         }
         const jResume = j.resume_parameters || {};
+        const mustHave = jResume.mustHave || jResume.must_have || [];
+        const redFlags = jResume.redFlags || jResume.red_flags || [];
+        const goodToHave = jResume.goodToHave || jResume.good_to_have || [];
         const criteria = {
-          mustHave: jResume.mustHave || jResume.must_have || [],
-          redFlags: jResume.redFlags || jResume.red_flags || [],
-          goodToHave: jResume.goodToHave || jResume.good_to_have || [],
-          goodToHaveMinMatch: jResume.goodToHaveMinMatch ?? 1
+          mustHave: Array.isArray(mustHave) ? mustHave : [],
+          redFlags: Array.isArray(redFlags) ? redFlags : [],
+          goodToHave: Array.isArray(goodToHave) ? goodToHave : [],
         };
+        criteria.goodToHaveMinMatch = jResume.goodToHaveMinMatch ?? (jResume.good_to_have_min_match ?? (criteria.goodToHave.length > 0 ? 1 : 0));
         if (!Array.isArray(criteria.mustHave)) criteria.mustHave = [];
         if (!Array.isArray(criteria.redFlags)) criteria.redFlags = [];
         if (!Array.isArray(criteria.goodToHave)) criteria.goodToHave = [];
@@ -10246,17 +10440,22 @@ function connectWebSocket() {
     socket = null;
   }
 
-  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let wsHost = window.location.host;
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    wsHost = '127.0.0.1:8000';
+  let wsUrl;
+  if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_WS_URL) {
+    wsUrl = `${process.env.NEXT_PUBLIC_WS_URL}/ws`;
   } else {
-    const cloudPortMatch = window.location.hostname.match(/^(\d+)-/);
-    if (cloudPortMatch) {
-      wsHost = window.location.host.replace(cloudPortMatch[0], '8000-');
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsHost = window.location.host;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      wsHost = '127.0.0.1:8000';
+    } else {
+      const cloudPortMatch = window.location.hostname.match(/^(\d+)-/);
+      if (cloudPortMatch) {
+        wsHost = window.location.host.replace(cloudPortMatch[0], '8000-');
+      }
     }
+    wsUrl = `${wsProto}//${wsHost}/ws`;
   }
-  const wsUrl = `${wsProto}//${wsHost}/ws`;
   
   console.log(`Connecting to WebSocket at ${wsUrl}...`);
   socket = new WebSocket(wsUrl);
@@ -10302,10 +10501,8 @@ async function callDeepSeekAPI(messages, jsonMode = false) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 35000);
 
-  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : '';
-
   try {
-    const response = await fetch(`${baseUrl}/api/deepseek`, {
+    const response = await fetch('/api/deepseek', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages, jsonMode }),

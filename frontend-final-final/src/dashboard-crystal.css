@@ -836,7 +836,7 @@ body.light-theme .theme-icon-sun { display: block; }
 .job-card:hover .btn-job-kebab { opacity: 1; }
 .btn-job-kebab:hover { background: rgba(255,255,255,0.06); color: var(--color-text-primary); }
 .job-kebab-dropdown {
-  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 120;
+  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 1000;
   min-width: 200px; padding: 6px 0; border-radius: 10px;
   background: var(--glass-bg-solid, #1a1a2e); border: 1px solid var(--glass-border);
   box-shadow: 0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
@@ -845,6 +845,8 @@ body.light-theme .theme-icon-sun { display: block; }
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
 }
 .job-kebab-dropdown.open { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+/* Lift the active card above its siblings so the dropdown isn't clipped */
+.job-card.kebab-open { z-index: 500; }
 .kebab-item {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 14px;
   background: none; border: none; color: var(--color-text-secondary); font-size: 0.82rem;
@@ -6034,6 +6036,8 @@ body.light-theme .funnel-svg-tooltip {
 
 .jobs-cards-grid {
   gap: 16px !important;
+  /* Ensures .job-card.kebab-open z-index can escape sibling stacking contexts */
+  isolation: isolate;
 }
 
 /* ============================================================
