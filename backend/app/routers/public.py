@@ -268,6 +268,11 @@ def confirm_interview_slot(token: str, db: Session = Depends(get_db)):
         )
     except Exception as mail_err:
         logger.error(f"Failed to send confirmation email: {mail_err}")
+        raise HTTPException(
+            status_code=status_code if 'status_code' in locals() else 500,
+            detail=f"Failed to send confirmation email: {str(mail_err)}"
+        )
+
         
     time_str = proposed_time.strftime("%B %d, %Y at %I:%M %p UTC")
     
@@ -416,6 +421,11 @@ def public_reschedule_interview(
         )
     except Exception as mail_err:
         logger.error(f"Failed to send rescheduled confirmation email: {mail_err}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send rescheduled confirmation email: {str(mail_err)}"
+        )
+
     
     return {"status": "success", "new_scheduled_time": parsed_time.isoformat()}
 

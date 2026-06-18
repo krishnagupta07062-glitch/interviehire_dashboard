@@ -13,6 +13,13 @@ export default function SignupPage() {
 
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const emailParam = params.get('email');
+      if (emailParam) {
+        setFormData(p => ({ ...p, email: emailParam }));
+      }
+    }
   }, []);
 
   if (!mounted) {
@@ -34,8 +41,7 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : '';
-      const res = await fetch(`${baseUrl}/api/auth/signup`, {
+      const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

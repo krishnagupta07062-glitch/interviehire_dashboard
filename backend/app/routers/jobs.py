@@ -1883,6 +1883,18 @@ def schedule_interview(
         )
     except Exception as mail_err:
         logger.error(f"Failed to send interview confirmation email: {mail_err}")
+        if stage == "screening":
+            applicant.screening_scheduled_at = None
+            applicant.screening_status = None
+        else:
+            applicant.functional_scheduled_at = None
+            applicant.functional_status = None
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send interview invitation email: {str(mail_err)}"
+        )
+
 
     # Sync to AI backend
     try:
